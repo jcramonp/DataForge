@@ -1,0 +1,41 @@
+{
+  "dataset": "Olist Brazilian E-Commerce Public Dataset",
+  "source_url": "https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce",
+  "license_note": "Confirm the license and permitted academic use on the source page before redistribution.",
+  "raw_directory": "data/raw/olist",
+  "tables": {
+    "customers": {
+      "file": "olist_customers_dataset.csv",
+      "primary_key": ["customer_id"],
+      "required_columns": ["customer_id", "customer_unique_id", "customer_zip_code_prefix", "customer_city", "customer_state"],
+      "important_fields": ["customer_unique_id", "customer_city", "customer_state"],
+      "potential_pii": ["customer_id", "customer_unique_id", "customer_zip_code_prefix", "customer_city"]
+    },
+    "orders": {
+      "file": "olist_orders_dataset.csv",
+      "primary_key": ["order_id"],
+      "foreign_keys": [{"columns": ["customer_id"], "references": "customers.customer_id"}],
+      "required_columns": ["order_id", "customer_id", "order_status", "order_purchase_timestamp", "order_approved_at", "order_delivered_carrier_date", "order_delivered_customer_date", "order_estimated_delivery_date"],
+      "important_fields": ["order_status", "order_purchase_timestamp", "order_delivered_customer_date"],
+      "potential_pii": ["customer_id"]
+    },
+    "order_items": {
+      "file": "olist_order_items_dataset.csv",
+      "primary_key": ["order_id", "order_item_id"],
+      "foreign_keys": [
+        {"columns": ["order_id"], "references": "orders.order_id"},
+        {"columns": ["product_id"], "references": "products.product_id"}
+      ],
+      "required_columns": ["order_id", "order_item_id", "product_id", "seller_id", "shipping_limit_date", "price", "freight_value"],
+      "important_fields": ["product_id", "seller_id", "price", "freight_value"],
+      "potential_pii": ["seller_id"]
+    },
+    "products": {
+      "file": "olist_products_dataset.csv",
+      "primary_key": ["product_id"],
+      "required_columns": ["product_id", "product_category_name", "product_name_lenght", "product_description_lenght", "product_photos_qty", "product_weight_g", "product_length_cm", "product_height_cm", "product_width_cm"],
+      "important_fields": ["product_category_name", "product_weight_g", "product_length_cm", "product_height_cm", "product_width_cm"],
+      "potential_pii": []
+    }
+  }
+}
