@@ -27,6 +27,25 @@ The current objective is to build the first end-to-end functional slice of DataF
 - documented architecture and data model;
 - evidence of the implemented flow.
 
+### Frozen Alpha architecture
+
+For Sprint 1, the implementation is intentionally limited to a reproducible local vertical slice:
+
+- Olist CSV files as the pilot source;
+- Python + pandas for ingestion and transformations;
+- Great Expectations for declarative data quality;
+- PostgreSQL for DataForge operational metadata;
+- MinIO + Parquet for Bronze, Silver, Quarantine and Gold data assets;
+- Docker Compose for the local runtime;
+- Airflow only after the core manual pipeline is stable.
+
+Kafka, PySpark, OpenMetadata, Prometheus/Grafana, MLflow and Kubernetes remain part of the broader target architecture and are outside the Sprint 1 Alpha unless implementation evidence proves they are necessary.
+
+Detailed decisions are documented in:
+
+- `docs/data-model/alpha-data-model.md`
+- `docs/architecture/alpha-architecture.md`
+
 ## Initial technology stack
 
 The Alpha Product will prioritize a minimal, demonstrable stack:
