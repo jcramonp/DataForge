@@ -1,9 +1,8 @@
 """Ingest the four Sprint 1 Olist source CSVs into the Bronze layer.
 
-The Bronze layer preserves source values and schema as closely as practical while
-changing the persisted format from CSV to Parquet. No cleaning or quality-based
-row rejection is performed here; those responsibilities belong to later Silver
-and Quarantine steps.
+Bronze preserves source values/schema as closely as practical while changing the
+persisted format from CSV to Parquet. Cleaning and quality-based rejection belong
+to later Silver and Quarantine steps.
 """
 
 from __future__ import annotations
@@ -21,7 +20,6 @@ import pandas as pd
 import psycopg
 from botocore.client import Config
 from dotenv import load_dotenv
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "pilot_olist.json"
@@ -56,14 +54,11 @@ def validate_source_file(path: Path, required_columns: list[str]) -> pd.DataFram
 
 
 def minio_client():
-    endpoint = os.environ["MINIO_ENDPOINT"]
-    access_key = os.environ["MINIO_ROOT_USER"]
-    secret_key = os.environ["MINIO_ROOT_PASSWORD"]
     return boto3.client(
         "s3",
-        endpoint_url=endpoint,
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
+        endpoint_url=os.environ["MINIO_ENDPOINT"],
+        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
+        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
         region_name="us-east-1",
         config=Config(signature_version="s3v4"),
     )
@@ -79,11 +74,8 @@ def postgres_connection():
     )
 
 
-def ensure_control_plane_records(conn: psycopg.Connection, table_code: str) -> tuple[int, int]:
-    """Create/reuse Alpha client/project/source/dataset metadata.
-
-    Returns (dataset_id, dataset_version_id placeholder is created separately).
-    """
+def ensure_control_plane_records(conn: psycopg.Connection, table_code: str) -> int:
+    """Create/reuse the Alpha client, project, source and dataset records."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -112,7 +104,8 @@ def ensure_control_plane_records(conn: psycopg.Connection, table_code: str) -> t
             INSERT INTO data_source (project_id, source_code, source_type, source_name, connection_reference)
             VALUES (%s, %s, %s, %s, %s)
             ON CONFLICT (project_id, source_code)
-            DO UPDATE SET source_name = EXCLUDED.source_name, connection_reference = EXCLUDED.connection_reference
+            DO UPDATE SET source_name = EXCLUDED.source_name,
+                          connection_reference = EXCLUDED.connection_reference
             RETURNING source_id
             """,
             (project_id, "olist-csv", "csv", "Olist Kaggle CSV export", "data/raw/olist"),
@@ -124,7 +117,8 @@ def ensure_control_plane_records(conn: psycopg.Connection, table_code: str) -> t
             INSERT INTO dataset (source_id, dataset_code, dataset_name, logical_entity, classification, owner_name)
             VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (source_id, dataset_code)
-            DO UPDATE SET dataset_name = EXCLUDED.dataset_name, logical_entity = EXCLUDED.logical_entity
+            DO UPDATE SET dataset_name = EXCLUDED.dataset_name,
+                          logical_entity = EXCLUDED.logical_entity
             RETURNING dataset_id
             """,
             (
@@ -136,9 +130,7 @@ def ensure_control_plane_records(conn: psycopg.Connection, table_code: str) -> t
                 "DataForge Sprint 1 team",
             ),
         )
-        dataset_id = cur.fetchone()[0]
-
-    return dataset_id
+        return cur.fetchone()[0]
 
 
 def register_dataset_version(
@@ -155,7 +147,8 @@ def register_dataset_version(
             INSERT INTO dataset_version (dataset_id, version_label, schema_hash, source_checksum)
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (dataset_id, version_label)
-            DO UPDATE SET schema_hash = EXCLUDED.schema_hash, source_checksum = EXCLUDED.source_checksum
+            DO UPDATE SET schema_hash = EXCLUDED.schema_hash,
+                          source_checksum = EXCLUDED.source_checksum
             RETURNING dataset_version_id
             """,
             (dataset_id, version_label, schema_hash, checksum),
@@ -168,10 +161,10 @@ def start_pipeline_run(conn: psycopg.Connection, dataset_version_id: int, row_co
         cur.execute(
             """
             INSERT INTO pipeline_run (dataset_version_id, run_type, status, input_rows)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, 'source_to_bronze', 'running', %s)
             RETURNING run_id
             """,
-            (dataset_version_id, "source_to_bronze", "running", row_count),
+            (dataset_version_id, row_count),
         )
         return cur.fetchone()[0]
 
@@ -296,7 +289,10 @@ def main() -> None:
     results = run_ingestion()
     print("Bronze ingestion completed")
     for item in results:
-        print(f"- {item['table']}: {item['rows']} rows -> {item['storage_uri']} (run_id={item['run_id']})")
+        print(
+            f"- {item['table']}: {item['rows']} rows -> "
+            f"{item['storage_uri']} (run_id={item['run_id']})"
+        )
 
 
 if __name__ == "__main__":
