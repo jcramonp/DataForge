@@ -1,18 +1,19 @@
 # Project documentation
 
-This directory contains Sprint documentation and engineering evidence.
+This directory contains Sprint documentation and engineering evidence, including:
 
-Current Sprint 1 documentation includes:
-
-- `architecture/alpha-architecture.md`: frozen Alpha architecture and boundary against the broader target architecture;
-- `data-model/alpha-data-model.md`: Olist source model plus DataForge operational metadata model;
-- `profiling/olist_alpha_profile.md`: observed profiling results for the pilot dataset;
-- `sprint-1/pilot-olist.md`: pilot dataset selection, scope and reproducible profiling workflow.
-
-Later Sprint evidence will also include:
-
+- architecture;
+- data discovery and profiling;
+- data model;
 - governance decisions;
 - quality rules;
-- pipeline execution evidence;
-- performance/partitioning observations;
-- presentation/PDF support material.
+- technical decisions;
+- Sprint evidence.
+
+## Current Sprint 1 documents
+
+- `architecture/alpha-architecture.md`: frozen Sprint 1 Alpha architecture and target-architecture boundary.
+- `data-model/alpha-data-model.md`: Olist source/domain model and DataForge operational metadata model.
+- `profiling/olist_alpha_profile.md`: observed profiling results for the Olist pilot.
+- `sprint-1/pilot-olist.md`: pilot selection and scope contract.
+- `evidence/infrastructure-verification.md`: local verification of Docker Compose, PostgreSQL and MinIO for checklist steps 6 and 7.
