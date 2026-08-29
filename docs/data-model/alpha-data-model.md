@@ -80,11 +80,26 @@ erDiagram
 
 | Relationship | Cardinality | Join key | Interpretation |
 |---|---|---|---|
-| `customers -> orders` | 1:N | `customer_id` | A customer record can be associated with one or more orders. |
+| `customers -> orders` | 1:1 at `customer_id` level | `customer_id` | In Olist, each `customer_id` is associated with a specific order-level customer record. Repeat customers are identified through `customer_unique_id`. |
 | `orders -> order_items` | 1:N | `order_id` | An order may contain several item rows. |
 | `products -> order_items` | 1:N | `product_id` | A product may appear in many order-item rows. |
 
 `order_items` uses the composite key `(order_id, order_item_id)` because one order may contain multiple rows.
+
+### Customer identity semantics
+
+In Olist, `customer_id` is order-scoped: each order references a customer record
+through this identifier.
+
+`customer_unique_id` represents the persistent customer identity and may appear
+across multiple customer records/orders.
+
+Therefore:
+
+- `customers.customer_id` → `orders.customer_id` represents the operational
+  relationship between a customer record and its order.
+- `customer_unique_id` should be used when analyzing repeat customers across
+  multiple orders.
 
 ### Decisions derived from profiling
 
