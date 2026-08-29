@@ -111,6 +111,8 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: dataforge-airflow-alpha-jwt-secret-2026-change-for-production-0123456789abcdef
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -150,6 +152,8 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: dataforge-airflow-alpha-jwt-secret-2026-change-for-production-0123456789abcdef
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -183,6 +187,8 @@ services:
     environment:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+      AIRFLOW__API_AUTH__JWT_SECRET: dataforge-airflow-alpha-jwt-secret-2026-change-for-production-0123456789abcdef
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     command: dag-processor
     volumes:
