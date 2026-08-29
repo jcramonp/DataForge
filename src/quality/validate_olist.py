@@ -162,10 +162,10 @@ RULES: dict[str, list[QualityRule]] = {
     ],
     "products": [
         QualityRule("product_id_not_null", "completeness", lambda: gx.expectations.ExpectColumnValuesToNotBeNull(column="product_id"), non_null_mask("product_id")),
-        QualityRule("product_weight_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_weight_g", min_value=1, mostly=0.999), between_mask("product_weight_g", 1, allow_null=True)),
-        QualityRule("product_length_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_length_cm", min_value=1, mostly=0.999), between_mask("product_length_cm", 1, allow_null=True)),
-        QualityRule("product_height_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_height_cm", min_value=1, mostly=0.999), between_mask("product_height_cm", 1, allow_null=True)),
-        QualityRule("product_width_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_width_cm", min_value=1, mostly=0.999), between_mask("product_width_cm", 1, allow_null=True)),
+        QualityRule("product_weight_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_weight_g", min_value=1), between_mask("product_weight_g", 1, allow_null=True)),
+        QualityRule("product_length_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_length_cm", min_value=1), between_mask("product_length_cm", 1, allow_null=True)),
+        QualityRule("product_height_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_height_cm", min_value=1), between_mask("product_height_cm", 1, allow_null=True)),
+        QualityRule("product_width_positive_when_present", "validity", lambda: gx.expectations.ExpectColumnValuesToBeBetween(column="product_width_cm", min_value=1), between_mask("product_width_cm", 1, allow_null=True)),
         QualityRule("product_category_present", "completeness", lambda: gx.expectations.ExpectColumnValuesToNotBeNull(column="product_category_name", mostly=0.98), non_null_mask("product_category_name"), severity="warning"),
     ],
 }
