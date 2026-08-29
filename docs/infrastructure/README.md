@@ -10,9 +10,21 @@ The Alpha runtime is intentionally minimal and local. It provides PostgreSQL for
 
 ## Start
 
+Linux/macOS:
+
 ```bash
 cp .env.example .env
-# Replace placeholder credentials in .env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Then replace placeholder credentials in `.env` and run:
+
+```bash
 docker compose config
 docker compose up -d
 ```
