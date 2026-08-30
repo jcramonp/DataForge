@@ -30,7 +30,7 @@ Other Olist tables remain outside the Alpha boundary.
 
 ```mermaid
 erDiagram
-    CUSTOMERS ||--o{ ORDERS : places
+    CUSTOMERS ||--|| ORDERS : places
     ORDERS ||--o{ ORDER_ITEMS : contains
     PRODUCTS ||--o{ ORDER_ITEMS : appears_in
 
