@@ -12,6 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
+      - ./database/governance_views.sql:/docker-entrypoint-initdb.d/002_governance_views.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -112,7 +113,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
-      AIRFLOW__API_AUTH__JWT_SECRET: dataforge-airflow-alpha-jwt-secret-2026-change-for-production-0123456789abcdef
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -153,7 +154,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
-      AIRFLOW__API_AUTH__JWT_SECRET: dataforge-airflow-alpha-jwt-secret-2026-change-for-production-0123456789abcdef
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -188,7 +189,7 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
-      AIRFLOW__API_AUTH__JWT_SECRET: dataforge-airflow-alpha-jwt-secret-2026-change-for-production-0123456789abcdef
+      AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     command: dag-processor
     volumes:
