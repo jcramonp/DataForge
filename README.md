@@ -61,6 +61,14 @@ The Alpha Product will prioritize a minimal, demonstrable stack:
 
 Additional technologies such as PySpark, Kafka, OpenMetadata, Prometheus, Grafana, and MLflow are part of the target architecture and will be incorporated progressively when justified by the project scope.
 
+### Architecture and Data Modeling Diagrams
+- Architecture Diagram
+<img width="700" height="420" alt="image" src="https://github.com/user-attachments/assets/d21ff69e-4e69-43bd-a944-97d3199446d8" />
+
+- Data Modeling Diagram
+<img width="750" height="400" alt="image" src="https://github.com/user-attachments/assets/d718fab8-55df-4029-9f2a-958c434be862" />
+
+
 ## Engineering principles
 
 DataForge is designed around:
