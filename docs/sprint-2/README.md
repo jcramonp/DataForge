@@ -83,6 +83,8 @@ Recommended execution order:
 12. **#32** CI/CD, observability and deployment hardening.
 13. **#29** Multi-source end-to-end validation and final evidence.
 
+See the [issue dependency graph, execution waves and backlog rules](backlog.md) for the dependency order, parallel-work guidance and board transition rules.
+
 ## Definition of Done
 
 Sprint 2 is complete when all of the following are true:
@@ -136,7 +138,7 @@ The LLM helps interpret business intent and suggests configuration, while the Da
 
 - [Scope and acceptance criteria](scope.md)
 - [Target architecture](architecture.md)
-- [Backlog and dependencies](backlog.md)
+- [Issue dependency graph and execution backlog](backlog.md)
 - [GitHub work management](work-management.md)
 - [Team ownership plan](team-ownership.md)
 - [GitHub Project and Milestone setup](project-board-setup.md)
