@@ -26,52 +26,108 @@ This issue is the sprint map. It is not an implementation task owned by one deve
 
 ## Dependency graph
 
-```text
-                         #19 Contracts
-                              |
-             +----------------+----------------+
-             |                |                |
-             v                v                v
-      #20 Connectors     #21 Profiling     #23 Metadata/
-             |                |            Governance
-             +--------+-------+                |
-                      v                        |
-              #22 Silver + Quality             |
-                      |                        |
-                      v                        |
-                 #31 Gold Engine <-------------+
-                      |
-                      v
-                 #24 Airflow
-                      |
-                      v
-                 #25 FastAPI
-                    /     \
-                   v       v
-              #26 LLM    #27 Web UI
-                   \       /
-                    \     /
-                      v
-                   #28 AWS
-                      |
-                      v
-             #32 CI/CD + Operations
-                      |
-                      v
-             #29 Final Validation
+The graph below shows the recommended dependency order for Sprint 2. An arrow `A --> B` means that **B should normally wait until A is sufficiently stable**.
+
+```mermaid
+flowchart TD
+
+    I19["#19 Generic dataset contracts<br/>Owner: jcramonp"]
+
+    I20["#20 Generic source connectors<br/>Owner: fcastroj"]
+    I21["#21 Schema discovery & profiling<br/>Owner: gabriela611"]
+    I23["#23 Lineage & certification<br/>Owner: fcastroj"]
+
+    I22["#22 Silver transformation & quality<br/>Owner: gabriela611"]
+    I32["#32 CI/CD & observability<br/>Owner: jcramonp"]
+
+    I31["#31 Configurable Gold engine<br/>Owner: gabriela611"]
+
+    I24["#24 Metadata-driven Airflow<br/>Owner: jcramonp"]
+    I25["#25 FastAPI control plane<br/>Owner: fcastroj"]
+
+    I26["#26 LLM configuration copilot<br/>Owner: jcramonp"]
+    I27["#27 Web interface<br/>Owner: gabriela611"]
+
+    I28["#28 AWS reference deployment<br/>Owner: jcramonp"]
+
+    I29["#29 Multi-source final validation<br/>Owner: fcastroj"]
+
+    I19 --> I20
+    I19 --> I21
+    I19 --> I23
+
+    I19 --> I22
+    I21 --> I22
+
+    I22 --> I31
+    I23 --> I31
+
+    I20 --> I24
+    I22 --> I24
+    I31 --> I24
+
+    I23 --> I25
+    I24 --> I25
+
+    I19 --> I26
+    I21 --> I26
+    I22 --> I26
+    I31 --> I26
+
+    I25 --> I27
+    I26 --> I27
+
+    I24 --> I28
+    I25 --> I28
+    I27 --> I28
+
+    I28 --> I29
+
+    I19 -. can start early .-> I32
+    I32 -. continuous work .-> I29
 ```
 
-The diagram expresses the dominant dependency order, not a rule that all work must be serial. Tasks can run in parallel when their contracts are stable.
+The graph expresses the dominant dependency order, not a rule that all work must be serial. Tasks in the same wave may run in parallel once their required contracts/interfaces are stable.
+
+## Execution waves
+
+| Wave | Issues | Parallel? | Purpose |
+|---|---|---|---|
+| 0 | #19 | No | Foundation: define the common configuration/contract language used by the rest of DataForge |
+| 1 | #20, #21, #23 | Yes | Ingestion, dataset understanding and governance foundations |
+| 2 | #22 + early #32 | Partially | Generic Silver/Quality processing while CI/observability starts as cross-cutting work |
+| 3 | #31 | No | Build configurable curated Gold outputs from validated datasets |
+| 4 | #24, #25 | Partially | Orchestrate the core and expose it through the control-plane API |
+| 5 | #26, #27 | Partially | Add LLM-assisted configuration and the browser user experience |
+| 6 | #28 | No | Deploy the stable platform in the AWS reference environment |
+| 7 | #29 | No | Final multi-source validation and release gate |
+
+## How to use this graph
+
+- An issue can have an assignee while still remaining in **Backlog**.
+- Move an issue to **Ready** only when its blocking dependencies are sufficiently stable.
+- Move an issue to **In Progress** when its owner actually starts implementation and creates/uses the feature branch.
+- Issues in the same wave may be developed in parallel when their dependencies allow it.
+- `#32` is cross-cutting work: CI can start early, while cloud observability and deployment hardening continue later in the Sprint.
+- Olist must remain functional after every major refactor and serves as the main regression case.
+- `#29` is the final release gate before opening the Sprint 2 release PR from `develop` to `main`.
+
+## Current starting point
+
+At the start of Sprint 2:
+
+- **Ready:** #19.
+- **Backlog:** #20, #21, #22, #23, #24, #25, #26, #27, #28, #29, #31 and #32.
+
+Once #19 is stable enough, #20, #21 and #23 can move to **Ready** and be developed in parallel.
 
 ## Recommended team parallelization
 
 After #19 reaches a stable contract:
 
-- Contributor A can advance #20 connectors.
-- Contributor B can advance #21 profiling.
-- Contributor C can advance #23 metadata/governance design.
-
-Once those foundations are stable, work can move into #22/#31/#24 and then API/LLM/UI.
+- **fcastroj** can advance #20 connectors and then #23/#25 according to dependencies.
+- **gabriela611** can advance #21 profiling and then #22/#31/#27 according to dependencies.
+- **jcramonp** can integrate the contract work, begin the early CI portion of #32, and later advance #24/#26/#28.
 
 Avoid starting deep UI/LLM/cloud implementation before the configuration contracts and core service interfaces are stable.
 
