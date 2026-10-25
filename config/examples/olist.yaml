@@ -1,0 +1,512 @@
+contract_version: "1.0"
+
+client:
+  code: olist
+  name: Olist
+
+project:
+  code: olist-alpha
+  name: Olist DataForge Pilot
+
+source:
+  code: olist-csv
+  name: Olist CSV Files
+  type: file
+
+datasets:
+  - code: customers
+    name: Olist Customers
+    owner: DataForge
+    classification: internal
+
+    source_object:
+      path: data/raw/olist/olist_customers_dataset.csv
+      format: csv
+
+    schema:
+      - name: customer_id
+        type: string
+        nullable: false
+        classification: confidential
+
+      - name: customer_unique_id
+        type: string
+        nullable: false
+        classification: confidential
+
+      - name: customer_zip_code_prefix
+        type: integer
+        nullable: false
+        classification: confidential
+
+      - name: customer_city
+        type: string
+        nullable: false
+        classification: confidential
+
+      - name: customer_state
+        type: string
+        nullable: false
+
+    keys:
+      primary:
+        - customer_id
+
+    silver:
+      transformations:
+        - operation: trim
+          column: customer_id
+
+        - operation: trim
+          column: customer_unique_id
+
+        - operation: cast
+          column: customer_zip_code_prefix
+          type: integer
+
+        - operation: lower
+          column: customer_city
+
+        - operation: upper
+          column: customer_state
+
+    quality:
+      rules:
+        - name: customer_id_not_null
+          rule: not_null
+          column: customer_id
+          severity: critical
+
+        - name: customer_unique_id_not_null
+          rule: not_null
+          column: customer_unique_id
+          severity: critical
+
+        - name: customer_state_format
+          rule: regex
+          column: customer_state
+          pattern: "^[A-Z]{2}$"
+          severity: critical
+
+  - code: orders
+    name: Olist Orders
+    owner: DataForge
+    classification: internal
+
+    source_object:
+      path: data/raw/olist/olist_orders_dataset.csv
+      format: csv
+
+    schema:
+      - name: order_id
+        type: string
+        nullable: false
+
+      - name: customer_id
+        type: string
+        nullable: false
+        classification: confidential
+
+      - name: order_status
+        type: string
+        nullable: false
+
+      - name: order_purchase_timestamp
+        type: datetime
+        nullable: false
+
+      - name: order_approved_at
+        type: datetime
+        nullable: true
+
+      - name: order_delivered_carrier_date
+        type: datetime
+        nullable: true
+
+      - name: order_delivered_customer_date
+        type: datetime
+        nullable: true
+
+      - name: order_estimated_delivery_date
+        type: datetime
+        nullable: true
+
+    keys:
+      primary:
+        - order_id
+
+      foreign:
+        - columns:
+            - customer_id
+          references:
+            dataset: customers
+            columns:
+              - customer_id
+
+    silver:
+      transformations:
+        - operation: trim
+          column: order_id
+
+        - operation: trim
+          column: customer_id
+
+        - operation: lower
+          column: order_status
+
+        - operation: cast
+          column: order_purchase_timestamp
+          type: datetime
+
+        - operation: cast
+          column: order_approved_at
+          type: datetime
+
+        - operation: cast
+          column: order_delivered_carrier_date
+          type: datetime
+
+        - operation: cast
+          column: order_delivered_customer_date
+          type: datetime
+
+        - operation: cast
+          column: order_estimated_delivery_date
+          type: datetime
+
+    quality:
+      rules:
+        - name: order_id_not_null
+          rule: not_null
+          column: order_id
+          severity: critical
+
+        - name: order_customer_id_not_null
+          rule: not_null
+          column: customer_id
+          severity: critical
+
+        - name: purchase_timestamp_not_null
+          rule: not_null
+          column: order_purchase_timestamp
+          severity: critical
+
+        - name: order_status_allowed
+          rule: allowed_values
+          column: order_status
+          values:
+            - approved
+            - canceled
+            - created
+            - delivered
+            - invoiced
+            - processing
+            - shipped
+            - unavailable
+          severity: critical
+
+  - code: order_items
+    name: Olist Order Items
+    owner: DataForge
+    classification: internal
+
+    source_object:
+      path: data/raw/olist/olist_order_items_dataset.csv
+      format: csv
+
+    schema:
+      - name: order_id
+        type: string
+        nullable: false
+
+      - name: order_item_id
+        type: integer
+        nullable: false
+
+      - name: product_id
+        type: string
+        nullable: false
+
+      - name: seller_id
+        type: string
+        nullable: false
+        classification: confidential
+
+      - name: shipping_limit_date
+        type: datetime
+        nullable: false
+
+      - name: price
+        type: float
+        nullable: false
+
+      - name: freight_value
+        type: float
+        nullable: false
+
+    keys:
+      primary:
+        - order_id
+        - order_item_id
+
+      foreign:
+        - columns:
+            - order_id
+          references:
+            dataset: orders
+            columns:
+              - order_id
+
+        - columns:
+            - product_id
+          references:
+            dataset: products
+            columns:
+              - product_id
+
+    silver:
+      transformations:
+        - operation: trim
+          column: order_id
+
+        - operation: trim
+          column: product_id
+
+        - operation: trim
+          column: seller_id
+
+        - operation: cast
+          column: order_item_id
+          type: integer
+
+        - operation: cast
+          column: shipping_limit_date
+          type: datetime
+
+        - operation: cast
+          column: price
+          type: float
+
+        - operation: cast
+          column: freight_value
+          type: float
+
+    quality:
+      rules:
+        - name: item_order_id_not_null
+          rule: not_null
+          column: order_id
+          severity: critical
+
+        - name: item_product_id_not_null
+          rule: not_null
+          column: product_id
+          severity: critical
+
+        - name: order_item_id_positive
+          rule: greater_than_or_equal
+          column: order_item_id
+          value: 1
+          allow_null: false
+          severity: critical
+
+        - name: price_positive
+          rule: greater_than
+          column: price
+          value: 0
+          allow_null: false
+          severity: critical
+
+        - name: freight_nonnegative
+          rule: greater_than_or_equal
+          column: freight_value
+          value: 0
+          allow_null: false
+          severity: critical
+
+  - code: products
+    name: Olist Products
+    owner: DataForge
+    classification: internal
+
+    source_object:
+      path: data/raw/olist/olist_products_dataset.csv
+      format: csv
+
+    schema:
+      - name: product_id
+        type: string
+        nullable: false
+
+      - name: product_category_name
+        type: string
+        nullable: true
+
+      - name: product_name_length
+        type: integer
+        nullable: true
+
+      - name: product_description_length
+        type: integer
+        nullable: true
+
+      - name: product_photos_qty
+        type: integer
+        nullable: true
+
+      - name: product_weight_g
+        type: integer
+        nullable: true
+
+      - name: product_length_cm
+        type: integer
+        nullable: true
+
+      - name: product_height_cm
+        type: integer
+        nullable: true
+
+      - name: product_width_cm
+        type: integer
+        nullable: true
+
+    keys:
+      primary:
+        - product_id
+
+    silver:
+      transformations:
+        - operation: rename
+          from: product_name_lenght
+          to: product_name_length
+
+        - operation: rename
+          from: product_description_lenght
+          to: product_description_length
+
+        - operation: trim
+          column: product_id
+
+        - operation: lower
+          column: product_category_name
+
+        - operation: cast
+          column: product_name_length
+          type: integer
+
+        - operation: cast
+          column: product_description_length
+          type: integer
+
+        - operation: cast
+          column: product_photos_qty
+          type: integer
+
+        - operation: cast
+          column: product_weight_g
+          type: integer
+
+        - operation: cast
+          column: product_length_cm
+          type: integer
+
+        - operation: cast
+          column: product_height_cm
+          type: integer
+
+        - operation: cast
+          column: product_width_cm
+          type: integer
+
+    quality:
+      rules:
+        - name: product_id_not_null
+          rule: not_null
+          column: product_id
+          severity: critical
+
+        - name: product_weight_positive_when_present
+          rule: greater_than_or_equal
+          column: product_weight_g
+          value: 1
+          allow_null: true
+          severity: critical
+
+        - name: product_length_positive_when_present
+          rule: greater_than_or_equal
+          column: product_length_cm
+          value: 1
+          allow_null: true
+          severity: critical
+
+        - name: product_height_positive_when_present
+          rule: greater_than_or_equal
+          column: product_height_cm
+          value: 1
+          allow_null: true
+          severity: critical
+
+        - name: product_width_positive_when_present
+          rule: greater_than_or_equal
+          column: product_width_cm
+          value: 1
+          allow_null: true
+          severity: critical
+
+        - name: product_category_present
+          rule: not_null
+          column: product_category_name
+          severity: warning
+          mostly: 0.98
+
+gold:
+  - code: order_items_gold
+    name: Olist Gold Order Items
+    base_dataset: order_items
+    enabled: true
+
+    plan:
+      - operation: join
+        right_dataset: orders
+        left_on:
+          - order_id
+        right_on:
+          - order_id
+        how: inner
+
+      - operation: join
+        right_dataset: customers
+        left_on:
+          - customer_id
+        right_on:
+          - customer_id
+        how: inner
+
+      - operation: join
+        right_dataset: products
+        left_on:
+          - product_id
+        right_on:
+          - product_id
+        how: inner
+
+      - operation: derive
+        derived_operation: add
+        operands:
+          - price
+          - freight_value
+        output_column: item_total
+
+      - operation: select
+        columns:
+          - order_id
+          - order_item_id
+          - customer_id
+          - customer_state
+          - order_status
+          - order_purchase_timestamp
+          - product_id
+          - product_category_name
+          - price
+          - freight_value
+          - item_total
