@@ -716,6 +716,71 @@
       "title": "QualityRuleType",
       "type": "string"
     },
+    "RestPaginationConfig": {
+      "additionalProperties": false,
+      "description": "Supported REST pagination strategies.",
+      "properties": {
+        "strategy": {
+          "$ref": "#/$defs/RestPaginationStrategy",
+          "default": "none"
+        },
+        "page_param": {
+          "default": "page",
+          "title": "Page Param",
+          "type": "string"
+        },
+        "page_size_param": {
+          "default": "page_size",
+          "title": "Page Size Param",
+          "type": "string"
+        },
+        "page_size": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Page Size",
+          "type": "integer"
+        },
+        "start_page": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Start Page",
+          "type": "integer"
+        },
+        "offset_param": {
+          "default": "offset",
+          "title": "Offset Param",
+          "type": "string"
+        },
+        "limit_param": {
+          "default": "limit",
+          "title": "Limit Param",
+          "type": "string"
+        },
+        "start_offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Offset",
+          "type": "integer"
+        },
+        "max_pages": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Pages",
+          "type": "integer"
+        }
+      },
+      "title": "RestPaginationConfig",
+      "type": "object"
+    },
+    "RestPaginationStrategy": {
+      "enum": [
+        "none",
+        "page",
+        "offset"
+      ],
+      "title": "RestPaginationStrategy",
+      "type": "string"
+    },
     "Severity": {
       "enum": [
         "warning",
@@ -843,6 +908,19 @@
           "default": null,
           "title": "Table"
         },
+        "query": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
         "endpoint": {
           "anyOf": [
             {
@@ -857,9 +935,45 @@
           "title": "Endpoint"
         },
         "method": {
+          "const": "GET",
           "default": "GET",
           "title": "Method",
           "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "timeout_seconds": {
+          "default": 30.0,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "records_path": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Records Path"
+        },
+        "pagination": {
+          "$ref": "#/$defs/RestPaginationConfig"
         }
       },
       "title": "SourceObjectConfig",

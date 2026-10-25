@@ -20,6 +20,12 @@ class SourceType(str, Enum):
     REST = "rest"
 
 
+class RestPaginationStrategy(str, Enum):
+    NONE = "none"
+    PAGE = "page"
+    OFFSET = "offset"
+
+
 class FileFormat(str, Enum):
     CSV = "csv"
     JSON = "json"
@@ -135,28 +141,69 @@ class SourceConfig(StrictModel):
     description: str | None = None
 
 
+class RestPaginationConfig(StrictModel):
+    """Supported REST pagination strategies."""
+
+    strategy: RestPaginationStrategy = RestPaginationStrategy.NONE
+
+    page_param: str = "page"
+    page_size_param: str = "page_size"
+    page_size: int = Field(default=100, ge=1)
+    start_page: int = Field(default=1, ge=0)
+
+    offset_param: str = "offset"
+    limit_param: str = "limit"
+    start_offset: int = Field(default=0, ge=0)
+
+    max_pages: int = Field(default=100, ge=1)
+
+
 class SourceObjectConfig(StrictModel):
     """Physical object inside a configured source."""
 
+    # File
     path: str | None = Field(default=None, min_length=1)
     format: FileFormat | None = None
 
+    # PostgreSQL
     schema_name: str | None = Field(
         default=None,
         alias="schema",
         min_length=1,
     )
     table: str | None = Field(default=None, min_length=1)
+    query: str | None = Field(default=None, min_length=1)
 
+    # REST
     endpoint: str | None = Field(default=None, min_length=1)
-    method: str = "GET"
+    method: Literal["GET"] = "GET"
+
+    params: dict[str, Any] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+
+    timeout_seconds: float = Field(
+        default=30.0,
+        gt=0,
+        le=300,
+    )
+
+    records_path: str | None = Field(default=None, min_length=1)
+
+    pagination: RestPaginationConfig = Field(
+        default_factory=RestPaginationConfig
+    )
 
     @model_validator(mode="after")
     def validate_location(self) -> "SourceObjectConfig":
-        if not any([self.path, self.table, self.endpoint]):
+        if not any([
+            self.path,
+            self.table,
+            self.query,
+            self.endpoint,
+        ]):
             raise ValueError(
                 "A source object must define at least one of: "
-                "'path', 'table', or 'endpoint'"
+                "'path', 'table', 'query', or 'endpoint'"
             )
 
         return self
@@ -559,10 +606,10 @@ class DataForgeContract(StrictModel):
                     )
 
             elif self.source.type == SourceType.POSTGRESQL:
-                if obj.table is None:
+                if obj.table is None and obj.query is None:
                     raise ValueError(
-                        f"PostgreSQL dataset '{dataset.code}' "
-                        "requires source_object.table"
+                        f"PostgreSQL dataset '{dataset.code}' requires "
+                        "source_object.table or source_object.query"
                     )
 
             elif self.source.type == SourceType.REST:
