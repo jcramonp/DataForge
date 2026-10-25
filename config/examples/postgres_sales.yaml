@@ -1,0 +1,103 @@
+contract_version: "1.0"
+
+client:
+  code: demo-retail
+  name: Demo Retail
+
+project:
+  code: sales-analytics
+  name: Sales Analytics
+
+source:
+  code: sales-postgres
+  name: Sales PostgreSQL
+  type: postgresql
+  connection_reference: demo-postgres
+
+datasets:
+  - code: sales
+    name: Sales
+
+    source_object:
+      schema: public
+      table: sales
+
+    owner: analytics-team
+    classification: internal
+
+    schema:
+      - name: sale_id
+        type: string
+        nullable: false
+
+      - name: customer_id
+        type: string
+        nullable: false
+
+      - name: amount
+        type: float
+        nullable: false
+
+      - name: tax
+        type: float
+        nullable: false
+
+      - name: created_at
+        type: datetime
+        nullable: false
+
+    keys:
+      primary:
+        - sale_id
+
+    silver:
+      transformations:
+        - operation: trim
+          column: sale_id
+
+        - operation: cast
+          column: amount
+          type: float
+
+        - operation: cast
+          column: tax
+          type: float
+
+        - operation: cast
+          column: created_at
+          type: datetime
+
+    quality:
+      rules:
+        - name: sale_id_required
+          rule: not_null
+          column: sale_id
+          severity: critical
+
+        - name: amount_non_negative
+          rule: greater_than_or_equal
+          column: amount
+          value: 0
+          severity: critical
+
+gold:
+  - code: sales_gold
+    name: Sales Gold
+    base_dataset: sales
+
+    plan:
+      - operation: derive
+        derived_operation: add
+        operands:
+          - amount
+          - tax
+        output_column: total_amount
+
+      - operation: select
+        columns:
+          - sale_id
+          - customer_id
+          - amount
+          - tax
+          - total_amount
+          - created_at
