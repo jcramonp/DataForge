@@ -1,0 +1,77 @@
+# Integration fixture (#32): a small non-Olist source exercised end-to-end in CI.
+# Paths are relative to the repository root (tests run from there).
+# Expected Quality Gate outcome for orders.csv: 7 input rows, 4 validated,
+# 3 quarantined (negative amount, null order_id, unknown status). R3 only
+# breaks a warning rule, so it stays in Validated Silver.
+contract_version: "1.0"
+
+client:
+  code: ci-retail
+  name: CI Retail
+
+project:
+  code: ci-retail-e2e
+  name: CI Retail End-to-End
+
+source:
+  code: ci-retail-csv
+  name: CI Retail CSV
+  type: file
+
+datasets:
+  - code: orders
+    name: Retail Orders
+    source_object:
+      path: tests/fixtures/e2e/orders.csv
+      format: csv
+    schema:
+      - name: order_id
+        type: string
+        nullable: false
+      - name: customer_email
+        type: string
+        classification: confidential
+      - name: amount
+        type: float
+      - name: status
+        type: string
+      - name: created_at
+        type: date
+    keys:
+      primary: [order_id]
+    silver:
+      transformations:
+        - operation: trim
+          column: customer_email
+        - operation: lower
+          column: customer_email
+        - operation: upper
+          column: status
+        - operation: cast
+          column: amount
+          type: float
+    quality:
+      rules:
+        - name: order_id_present
+          rule: not_null
+          column: order_id
+          severity: critical
+        - name: order_id_unique
+          rule: unique
+          column: order_id
+          severity: critical
+        - name: amount_non_negative
+          rule: greater_than_or_equal
+          column: amount
+          value: 0
+          severity: critical
+        - name: status_known
+          rule: allowed_values
+          column: status
+          values: [PAID, PENDING, REFUNDED]
+          severity: critical
+        - name: email_format
+          rule: regex
+          column: customer_email
+          pattern: '^[^@\s]+@[^@\s]+\.[a-z]+$'
+          severity: warning
