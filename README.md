@@ -6,6 +6,20 @@ DataForge is an automated, scalable, and contract-driven data engineering platfo
 
 ---
 
+## Sprint 2 delivery
+
+Start with the [requirements and evidence matrix](docs/delivery/sprint2-requirements.md).
+It links the [current architecture](docs/sprint-2/architecture.md),
+[changelog](CHANGELOG.md), [data dictionary](docs/governance/data-dictionary.md),
+[data catalog](docs/governance/data-catalog.md), [RACI](docs/governance/raci.md),
+[applied PostgreSQL optimizations](docs/evidence/metadata-performance-verification.md),
+and [live-demo script](docs/delivery/sprint2-demo-script.md).
+The PDF presentation is in `docs/delivery/dataforge-sprint2.pdf`.
+
+The implemented infrastructure is **local Docker Compose**. AWS is a reference
+architecture; a deployed AWS environment is not claimed. Final-Sprint DataOps
+and downstream consumption are outside the required Sprint 2 delivery.
+
 ## Project Context
 
 DataForge is developed as a modular data engineering solution for **AI Solutions LATAM**, a consulting company delivering data engineering, advanced analytics, and machine learning projects across diverse client environments.

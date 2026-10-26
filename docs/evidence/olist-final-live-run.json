@@ -1,0 +1,393 @@
+{
+  "registration": {
+    "client_id": 1,
+    "project_id": 1,
+    "source_id": 1,
+    "contract_id": 13,
+    "contract_version": "1.0",
+    "revision": 1,
+    "contract_hash": "413b30d89109b409c89ea69319f26b487c8c20bc14810bc8dd6d6cadbcbe4c3b",
+    "status": "active",
+    "created": true,
+    "reactivated": false,
+    "datasets": [
+      {
+        "dataset_id": 1,
+        "dataset_code": "customers"
+      },
+      {
+        "dataset_id": 3,
+        "dataset_code": "orders"
+      },
+      {
+        "dataset_id": 4,
+        "dataset_code": "order_items"
+      },
+      {
+        "dataset_id": 5,
+        "dataset_code": "products"
+      }
+    ]
+  },
+  "trigger": {
+    "message": "Pipeline accepted for execution",
+    "dag_id": "dataforge_pipeline",
+    "external_run_id": "manual__2026-10-26T19:58:21.090629+00:00",
+    "state": "queued",
+    "contract_id": 13,
+    "datasets": [
+      "customers",
+      "orders",
+      "order_items",
+      "products"
+    ],
+    "gold": [
+      "order_items_gold"
+    ],
+    "stages": [
+      "bronze",
+      "profiling",
+      "silver",
+      "gold",
+      "certification"
+    ],
+    "certification": "evaluate"
+  },
+  "status": {
+    "dag_id": "dataforge_pipeline",
+    "external_run_id": "manual__2026-10-26T19:58:21.090629+00:00",
+    "state": "success",
+    "start_date": "2026-10-26T19:58:22.987452Z",
+    "end_date": "2026-10-26T20:00:24.059288Z",
+    "tasks": [
+      {
+        "task_id": "resolve_plan",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:23.618943Z",
+        "end_date": "2026-10-26T19:58:35.074494Z",
+        "duration": 11.455551,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset_targets",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:36.055584Z",
+        "end_date": "2026-10-26T19:58:41.504264Z",
+        "duration": 5.44868,
+        "try_number": 1
+      },
+      {
+        "task_id": "gold_targets",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:36.009434Z",
+        "end_date": "2026-10-26T19:58:41.520162Z",
+        "duration": 5.510728,
+        "try_number": 1
+      },
+      {
+        "task_id": "start_run",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:36.067582Z",
+        "end_date": "2026-10-26T19:58:44.593986Z",
+        "duration": 8.526404,
+        "try_number": 1
+      },
+      {
+        "task_id": "certification",
+        "state": "success",
+        "start_date": "2026-10-26T20:00:03.538049Z",
+        "end_date": "2026-10-26T20:00:07.904013Z",
+        "duration": 4.365964,
+        "try_number": 1
+      },
+      {
+        "task_id": "finalize",
+        "state": "success",
+        "start_date": "2026-10-26T20:00:10.197846Z",
+        "end_date": "2026-10-26T20:00:23.941605Z",
+        "duration": 13.743759,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.bronze",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:45.284547Z",
+        "end_date": "2026-10-26T19:58:59.454361Z",
+        "duration": 14.169814,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.profiling",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:09.020357Z",
+        "end_date": "2026-10-26T19:59:25.085855Z",
+        "duration": 16.065498,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.silver",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:26.136957Z",
+        "end_date": "2026-10-26T19:59:49.693568Z",
+        "duration": 23.556611,
+        "try_number": 1
+      },
+      {
+        "task_id": "gold",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:54.958850Z",
+        "end_date": "2026-10-26T20:00:02.358589Z",
+        "duration": 7.399739,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.bronze",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:45.336865Z",
+        "end_date": "2026-10-26T19:59:00.373954Z",
+        "duration": 15.037089,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.profiling",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:09.135901Z",
+        "end_date": "2026-10-26T19:59:27.036364Z",
+        "duration": 17.900463,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.silver",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:27.483513Z",
+        "end_date": "2026-10-26T19:59:53.595376Z",
+        "duration": 26.111863,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.bronze",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:45.365291Z",
+        "end_date": "2026-10-26T19:58:59.877700Z",
+        "duration": 14.512409,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.profiling",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:09.388180Z",
+        "end_date": "2026-10-26T19:59:26.390554Z",
+        "duration": 17.002374,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.silver",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:27.382299Z",
+        "end_date": "2026-10-26T19:59:52.460891Z",
+        "duration": 25.078592,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.bronze",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:45.542460Z",
+        "end_date": "2026-10-26T19:58:58.131371Z",
+        "duration": 12.588911,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.profiling",
+        "state": "success",
+        "start_date": "2026-10-26T19:58:59.748104Z",
+        "end_date": "2026-10-26T19:59:14.391630Z",
+        "duration": 14.643526,
+        "try_number": 1
+      },
+      {
+        "task_id": "dataset.silver",
+        "state": "success",
+        "start_date": "2026-10-26T19:59:17.430494Z",
+        "end_date": "2026-10-26T19:59:49.201806Z",
+        "duration": 31.771312,
+        "try_number": 1
+      }
+    ]
+  },
+  "persisted_orchestration": {
+    "orchestration_run_id": 17,
+    "status": "success",
+    "started_at": "2026-10-26 19:58:44.553582+00:00",
+    "finished_at": "2026-10-26 20:00:23.886184+00:00"
+  },
+  "persisted_assets": [
+    {
+      "stage": "bronze",
+      "target": "customers",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 115,
+      "asset_id": 111,
+      "layer": "bronze",
+      "row_count": 99441,
+      "storage_uri": "s3://dataforge-bronze/olist/olist-alpha/customers/source_checksum=6e8371d6364d/customers.parquet"
+    },
+    {
+      "stage": "bronze",
+      "target": "order_items",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 116,
+      "asset_id": 112,
+      "layer": "bronze",
+      "row_count": 112650,
+      "storage_uri": "s3://dataforge-bronze/olist/olist-alpha/order_items/source_checksum=226b9b4a58aa/order_items.parquet"
+    },
+    {
+      "stage": "bronze",
+      "target": "orders",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 117,
+      "asset_id": 113,
+      "layer": "bronze",
+      "row_count": 99441,
+      "storage_uri": "s3://dataforge-bronze/olist/olist-alpha/orders/source_checksum=cfef9ad85f47/orders.parquet"
+    },
+    {
+      "stage": "bronze",
+      "target": "products",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 114,
+      "asset_id": 110,
+      "layer": "bronze",
+      "row_count": 32951,
+      "storage_uri": "s3://dataforge-bronze/olist/olist-alpha/products/source_checksum=0de0a09231ad/products.parquet"
+    },
+    {
+      "stage": "certification",
+      "target": "contract",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": null,
+      "asset_id": null,
+      "layer": null,
+      "row_count": null,
+      "storage_uri": null
+    },
+    {
+      "stage": "gold",
+      "target": "order_items_gold",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 126,
+      "asset_id": 119,
+      "layer": "gold",
+      "row_count": 112642,
+      "storage_uri": "s3://dataforge-gold/olist/olist-alpha/order_items_gold/gold_v1/order_items_gold.parquet"
+    },
+    {
+      "stage": "profiling",
+      "target": "customers",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 119,
+      "asset_id": null,
+      "layer": null,
+      "row_count": null,
+      "storage_uri": null
+    },
+    {
+      "stage": "profiling",
+      "target": "order_items",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 121,
+      "asset_id": null,
+      "layer": null,
+      "row_count": null,
+      "storage_uri": null
+    },
+    {
+      "stage": "profiling",
+      "target": "orders",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 120,
+      "asset_id": null,
+      "layer": null,
+      "row_count": null,
+      "storage_uri": null
+    },
+    {
+      "stage": "profiling",
+      "target": "products",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 118,
+      "asset_id": null,
+      "layer": null,
+      "row_count": null,
+      "storage_uri": null
+    },
+    {
+      "stage": "silver",
+      "target": "customers",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 123,
+      "asset_id": 116,
+      "layer": "silver",
+      "row_count": 99441,
+      "storage_uri": "s3://dataforge-silver/olist/olist-alpha/customers/source_checksum=6e8371d6364d/validated_v1/customers.parquet"
+    },
+    {
+      "stage": "silver",
+      "target": "order_items",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 124,
+      "asset_id": 117,
+      "layer": "silver",
+      "row_count": 112650,
+      "storage_uri": "s3://dataforge-silver/olist/olist-alpha/order_items/source_checksum=226b9b4a58aa/validated_v1/order_items.parquet"
+    },
+    {
+      "stage": "silver",
+      "target": "orders",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 125,
+      "asset_id": 118,
+      "layer": "silver",
+      "row_count": 99441,
+      "storage_uri": "s3://dataforge-silver/olist/olist-alpha/orders/source_checksum=cfef9ad85f47/validated_v1/orders.parquet"
+    },
+    {
+      "stage": "silver",
+      "target": "products",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 122,
+      "asset_id": 114,
+      "layer": "silver",
+      "row_count": 32947,
+      "storage_uri": "s3://dataforge-silver/olist/olist-alpha/products/source_checksum=0de0a09231ad/validated_v1/products.parquet"
+    },
+    {
+      "stage": "silver",
+      "target": "products",
+      "status": "success",
+      "attempt": 1,
+      "pipeline_run_id": 122,
+      "asset_id": 115,
+      "layer": "quarantine",
+      "row_count": 4,
+      "storage_uri": "s3://dataforge-quarantine/olist/olist-alpha/products/source_checksum=0de0a09231ad/quality_v1/products.parquet"
+    }
+  ],
+  "lineage": {
+    "links": 9
+  }
+}

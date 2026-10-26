@@ -1,0 +1,198 @@
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+De un piloto a una plataforma por contratos
+
+Entrega local verificable: captura, limpieza, almacenamiento y gobierno de datos.
+
+01 Sprint 1: flujo específico de Olist. Sprint 2: motores reutilizables para CSV, PostgreSQL y REST.
+02 Un contrato define esquema, transformaciones y calidad; Airflow ejecuta etapas comunes.
+03 Demostraciones reales: Olist completo, ventas CSV y tareas REST con cuarentena y linaje.
+04 Repositorio privado: confirmar acceso del profesor y publicar este conjunto de cambios antes de
+entregar.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                   01
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Qué cambió frente al Sprint 1
+
+El avance principal es la generalización y la operación desde un control plane.
+
+Sprint 1                                                             Sprint 2
+Scripts de Olist                                                     Contratos tipados y conectores/motores genéricos
+Configuración y ejecución técnica                                    Onboarding API/UI y contratos con revisiones persistidas
+Calidad y capas del piloto                                           Profiling, reglas configurables y cuarentena por severidad
+Modelo inicial de gobierno                                           Linaje de activos, certificación auditada y copilot con aprobación
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                                                      02
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Arquitectura que está funcionando
+
+PostgreSQL guarda metadatos; MinIO guarda los registros de negocio en Parquet.
+
+Capa       Componentes y flujo
+Operación  React → FastAPI → contratos PostgreSQL → Airflow
+Datos      CSV / PostgreSQL / REST → Bronze → profiling → Silver/calidad
+Salida     Silver validado o cuarentena → Gold configurado → gobierno
+Copilot    Bedrock propone JSON; validación y aprobación crean una revisión
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop             03
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Código e infraestructura como código
+
+La entrega ejecutada es local. AWS es una referencia, no un despliegue demostrado.
+
+01 Docker Compose declara servicios, dependencias, redes, volúmenes y healthchecks; Dockerfiles
+construyen API y Airflow.
+02 Migraciones versionadas inicializan y actualizan PostgreSQL con checksum e idempotencia.
+03 Están implementados conectores, Bronze, profiling, Silver/calidad, Gold, orquestación, API y UI.
+04 DataOps completo y consumo downstream corresponden al Sprint Final según la rúbrica.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop  04
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Demo en vivo: seis ventas, dos errores
+
+Fuente: data/demo/ventas_demo.csv | contrato demostrado #12 | orquestación #16.
+
+Bronze   Silver validado                                                         Cuarentena
+6 filas  4 filas                                                                 2 filas
+
+Reglas críticas: cantidad > 0 y precio > 0; mostly=1; allow_null=false.
+
+Venta 4: cantidad=0. Venta 5: precio=-3000. Mostrar reglas, activos almacenados, filas aisladas y
+linaje; esperar SUCCESS sobre el mismo ID.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                05
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Regresión completa y segunda fuente
+
+Olist se volvió a ejecutar por API + Airflow con el contrato genérico #13.
+
+Evidencia                Resultado observado
+Olist: orquestación #17  SUCCESS; cuatro datasets + Gold + evaluación de certificación
+Olist: entrada y salida  344.483 filas Bronze; products: 32.947 Silver + 4 cuarentena
+Olist: integración Gold  112.642 filas; 9 relaciones de linaje hacia activos nuevos
+REST: /todos             200 Bronze → 160 Silver + 40 cuarentena por userId > 8
+
+REST corresponde a la corrida demostrada #11. Una nueva extracción depende del servicio externo. Gold puede reducir filas por joins:
+esa diferencia no es cuarentena.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                                                   06
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Optimización 1: índice compuesto
+
+Última versión por dataset: filtro y orden resueltos por un índice B-tree.
+
+SELECT dataset_version_id, version_label
+FROM dataset_version WHERE dataset_id = 42
+ORDER BY discovered_at DESC, dataset_version_id DESC LIMIT 1
+
+Antes     Después                                                           Resultados
+0.481 ms  0.041 ms                                                          Iguales; 11.73x
+
+SQL idéntico antes/después. 300.000 versiones y 300.000 corridas sintéticas aisladas; 7 muestras, mediana y caché caliente. Planes
+completos en metadata-performance-results.json.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                                                 07
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Optimización 2: vista materializada
+
+Reporte de corridas preagregado; refresco explícito y datos snapshot.
+
+SELECT * FROM metadata_run_totals
+WHERE dataset_id = 42 ORDER BY run_type, status
+
+Antes      Después                                                     Resultados
+29.743 ms  0.078 ms                                                    Iguales; 381.32x
+
+SQL idéntico antes/después. 300.000 versiones y 300.000 corridas sintéticas aisladas; 7 muestras, mediana y caché caliente. Planes
+completos en metadata-performance-results.json.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                                                 08
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Optimizaciones aplicadas y límites
+
+Migración 0008 aplicada a la base real; el benchmark de volumen no altera sus datos.
+
+01 Índice de última versión y materializado creados en PostgreSQL. El snapshot se verificó contra la
+agregación real: igualdad exacta.
+02 Construcción conjunta en prueba: 767.5 ms. Refresco: 421.3 ms; ambos costos se reportan.
+03 El índice agrega espacio y costo de escritura. La vista requiere refresco y puede quedar
+desactualizada; el overview mantiene consultas vivas.
+04 Las mejoras medidas son locales sobre volumen sintético. No se extrapolan a AWS ni se cuenta
+el experimento temporal Parquet como optimización productiva.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop  09
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Calidad y gobierno que se pueden inspeccionar
+
+El repositorio y la interfaz muestran definiciones, resultados y trazabilidad.
+
+Requisito               Dónde se verifica
+Diccionario y catálogo  Significado, tipo, claves, nulos y clasificación; tablas + API/UI
+Reglas implementadas    Contrato activo → quality_result → Silver o cuarentena
+Linaje                  asset_lineage enlaza activos de origen y salida; 9 links en Olist final
+RACI y certificación    Responsabilidades operativas; transiciones explícitas y auditadas
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                              10
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Problemas encontrados y cómo se resolvieron
+
+Las evidencias distinguen fallos de monitoreo, configuración y calidad de datos.
+
+Problema                                                             Resolución
+
+npm ausente / puerto API ocupado                                     Configurar Node; identificar y reiniciar la instancia correcta
+
+Consulta de estado falla temporalmente                               Reintentar el mismo ID; no duplicar la corrida aceptada
+
+Propuesta LLM inválida o campo inexistente Validación estricta y explicación; ninguna aplicación automática
+
+Optimización sin baseline comparable                                 Mismo SQL, resultados iguales, muestras y planes antes/después
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                                                  11
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Conocimientos aplicados
+
+Mapeo técnico para la sustentación; el equipo valida los nombres oficiales de sus materias.
+
+Origen                            Aplicación concreta
+Curso                             ETL/ELT, calidad, capas de almacenamiento, modelado y optimización
+Otras materias de la trayectoria  Bases de datos: SQL/índices; programación: módulos/pruebas; estadística:
+                                  profiling; APIs
+Aprendizaje autónomo del          Pydantic, Airflow/FastAPI/React, S3/MinIO y Bedrock con aprobación humana
+proyecto
+
+Cada integrante prepara un ejemplo que pueda explicar y ajusta este mapeo a su experiencia real. No se atribuyen al curso contenidos ni
+aportes individuales sin confirmación.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop                                          12
+DATAFORGE / SPRINT 2 / 26 OCT 2026
+
+Verificación y entrega
+
+Código, documentación y evidencia vinculados en docs/delivery/sprint2-requirements.md.
+
+01 Suite Python: 349 casos, 35 omitidos por integración; sin fallos. Después se añadieron y pasaron
+2 pruebas PostgreSQL nuevas.
+
+02 Todas las migraciones se aplicaron dos veces sobre un esquema aislado nuevo; benchmark
+verificó igualdad y rollback.
+
+03 Ensayo real Olist completo exitoso; CSV con SUCCESS automático confirmado. Ruff pasó en el
+conjunto de cambios.
+
+04 Antes de entregar: integrar el PR, verificar CI, abrir este PDF, ensayar y comprobar acceso del
+profesor al repositorio privado.
+
+https://github.com/jcramonp/DataForge | Version de entrega: develop  13
+
