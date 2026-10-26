@@ -45,3 +45,4 @@ frontend/dist/
 .agents/
 skills-lock.json
 
+reports/profiling/
