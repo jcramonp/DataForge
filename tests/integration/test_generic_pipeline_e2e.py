@@ -1,8 +1,9 @@
 """End-to-end regression of the generic contract-driven pipeline (#32).
 
-Runs a non-Olist CSV source through generic Bronze ingestion and the generic
-Silver + Quality Gate against real PostgreSQL and S3-compatible storage, then
-checks object storage, control-plane metadata, operational views and
+Runs a non-Olist CSV source through generic Bronze ingestion, the generic
+Silver + Quality Gate and the configurable Gold engine against real
+PostgreSQL and S3-compatible storage, then checks object storage,
+control-plane metadata, certification bootstrap, operational views and
 readiness. A second scenario breaks a run on purpose and verifies it can be
 traced to its run and dataset.
 """
@@ -15,6 +16,7 @@ from src.ingestion.bronze_generic import run_ingestion
 from src.ops.health import run_readiness_checks
 from src.ops.migrate import run_migrations
 from src.ops.run_summary import fetch_run_summary
+from src.transformations.gold_runner import run_gold_pipeline
 from src.transformations.silver_runner import parse_s3_uri, run_silver_pipeline
 from tests.integration import (
     fetch_all,
@@ -44,6 +46,7 @@ class GenericPipelineEndToEndTests(unittest.TestCase):
         prepare_environment(cls.settings)
         cls.bronze = run_ingestion(CONTRACT)
         cls.silver = run_silver_pipeline(CONTRACT)
+        cls.gold = run_gold_pipeline(CONTRACT)
         cls.s3 = create_s3_client(cls.settings)
 
     def test_bronze_ingests_every_source_row(self):
@@ -70,26 +73,50 @@ class GenericPipelineEndToEndTests(unittest.TestCase):
         self.assertEqual(severities["email_format"], ("warning", "fail"))
         self.assertEqual(severities["amount_non_negative"], ("critical", "fail"))
 
+    def test_gold_plan_aggregates_validated_silver(self):
+        self.assertEqual(len(self.gold), 1)
+        result = self.gold[0]
+        self.assertEqual(result["gold_code"], "orders_by_status")
+        self.assertEqual(result["input_rows"], 4)
+        self.assertEqual(result["output_rows"], 3)
+        bucket, key = parse_s3_uri(result["storage_uri"])
+        self.assertEqual(bucket, self.settings.storage.bucket("gold"))
+        self.s3.head_object(Bucket=bucket, Key=key)
+
     def test_control_plane_metadata_is_recorded(self):
         runs = fetch_all(
             self.settings,
             "SELECT run_type, status, accepted_rows, rejected_rows FROM pipeline_run ORDER BY run_id",
         )
         self.assertEqual(
-            runs,
-            [("source_to_bronze", "success", 7, 0), ("silver_quality_gate", "success", 4, 3)],
+            [(r[0], r[1]) for r in runs],
+            [
+                ("source_to_bronze", "success"),
+                ("silver_quality_gate", "success"),
+                ("silver_to_gold", "success"),
+            ],
         )
+        self.assertEqual(runs[0][2:], (7, 0))
+        self.assertEqual(runs[1][2:], (4, 3))
         layers = {r[0] for r in fetch_all(self.settings, "SELECT layer FROM data_asset")}
-        self.assertEqual(layers, {"bronze", "silver", "quarantine"})
+        self.assertEqual(layers, {"bronze", "silver", "quarantine", "gold"})
         quality = fetch_all(self.settings, "SELECT COUNT(*) FROM quality_result")[0][0]
         self.assertEqual(quality, 5)
+
+    def test_every_dataset_version_starts_as_draft(self):
+        # Trigger from migration 0002 (lineage/certification, #23).
+        versions = fetch_all(self.settings, "SELECT COUNT(*) FROM dataset_version")[0][0]
+        states = fetch_all(self.settings, "SELECT state, COUNT(*) FROM dataset_certification GROUP BY state")
+        self.assertGreaterEqual(versions, 2)
+        self.assertEqual(states, [("draft", versions)])
 
     def test_operational_summary_reflects_runs(self):
         with connect_postgres(self.settings) as conn:
             summary = fetch_run_summary(conn)
-        self.assertEqual(summary["totals"]["total_runs"], 2)
+        rejected = fetch_all(self.settings, "SELECT COALESCE(SUM(rejected_rows), 0) FROM pipeline_run")[0][0]
+        self.assertEqual(summary["totals"]["total_runs"], 3)
         self.assertEqual(summary["totals"]["failed_runs"], 0)
-        self.assertEqual(summary["totals"]["rejected_rows"], 3)
+        self.assertEqual(summary["totals"]["rejected_rows"], int(rejected))
         latest = {(d["dataset_code"], d["run_type"]): d["status"] for d in summary["datasets"]}
         self.assertEqual(latest[("orders", "silver_quality_gate")], "success")
 

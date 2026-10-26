@@ -23,6 +23,8 @@ import psycopg
 from src.common.clients import connect_postgres, create_s3_client
 from src.common.settings import load_environment_file
 
+from src.governance.lineage import register_lineage
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALPHA_TABLES = ("customers", "orders", "order_items", "products")
 QUALITY_VERSION = "v1"
@@ -68,7 +70,7 @@ def latest_baseline_silver_asset(conn: psycopg.Connection, table_code: str) -> d
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT dv.dataset_version_id, dv.source_checksum, da.storage_uri, da.row_count
+            SELECT da.asset_id, dv.dataset_version_id, dv.source_checksum, da.storage_uri, da.row_count
             FROM client c
             JOIN project p ON p.client_id = c.client_id
             JOIN data_source ds ON ds.project_id = p.project_id
@@ -92,10 +94,11 @@ def latest_baseline_silver_asset(conn: psycopg.Connection, table_code: str) -> d
     if row is None:
         raise RuntimeError(f"No successful baseline Silver asset found for '{table_code}'")
     return {
-        "dataset_version_id": row[0],
-        "source_checksum": row[1],
-        "storage_uri": row[2],
-        "row_count": row[3],
+        "asset_id": row[0],
+        "dataset_version_id": row[1],
+        "source_checksum": row[2],
+        "storage_uri": row[3],
+        "row_count": row[4],
     }
 
 
@@ -210,12 +213,49 @@ def record_quality_results(conn: psycopg.Connection, run_id: int, results: list[
             ))
 
 
-def register_asset(conn: psycopg.Connection, run_id: int, layer: str, asset_name: str, storage_uri: str, row_count: int, checksum: str) -> None:
+def register_asset(
+    conn: psycopg.Connection,
+    run_id: int,
+    layer: str,
+    asset_name: str,
+    storage_uri: str,
+    row_count: int,
+    checksum: str,
+) -> int:
     with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO data_asset (run_id, layer, asset_name, storage_uri, format, row_count, checksum)
-            VALUES (%s, %s, %s, %s, 'parquet', %s, %s)
-        """, (run_id, layer, asset_name, storage_uri, row_count, checksum))
+        cur.execute(
+            """
+            INSERT INTO data_asset (
+                run_id,
+                layer,
+                asset_name,
+                storage_uri,
+                format,
+                row_count,
+                checksum
+            )
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                'parquet',
+                %s,
+                %s
+            )
+            RETURNING asset_id
+            """,
+            (
+                run_id,
+                layer,
+                asset_name,
+                storage_uri,
+                row_count,
+                checksum,
+            ),
+        )
+
+        return int(cur.fetchone()[0])
 
 
 def finish_run(conn: psycopg.Connection, run_id: int, status: str, accepted_rows: int | None = None, rejected_rows: int | None = None, error_message: str | None = None) -> None:
@@ -250,16 +290,86 @@ def validate_table(table_code: str, s3, conn: psycopg.Connection, silver_bucket:
             valid_frame.to_parquet(valid_path, index=False, engine="pyarrow")
             valid_checksum = sha256_file(valid_path)
             s3.upload_file(str(valid_path), silver_bucket, valid_key)
-            register_asset(conn, run_id, "silver", f"olist_{table_code}_silver_validated", valid_uri, len(valid_frame), valid_checksum)
+            validated_asset_id = register_asset(
+                conn,
+                run_id,
+                "silver",
+                f"olist_{table_code}_silver_validated",
+                valid_uri,
+                len(valid_frame),
+                valid_checksum,
+            )
+
+            register_lineage(
+                conn=conn,
+                parent_asset_id=int(
+                    source["asset_id"]
+                ),
+                child_asset_id=validated_asset_id,
+                relation_type="validated_from",
+                created_by_run_id=run_id,
+                metadata={
+                    "stage": "quality_gate",
+                    "dataset": table_code,
+                },
+            )
 
             quarantine_uri = None
             if len(quarantine_frame):
-                quarantine_key = f"olist/{table_code}/source_checksum={checksum12}/quality_{QUALITY_VERSION}/{table_code}.parquet"
-                quarantine_uri = f"s3://{quarantine_bucket}/{quarantine_key}"
-                quarantine_frame.to_parquet(quarantine_path, index=False, engine="pyarrow")
-                quarantine_checksum = sha256_file(quarantine_path)
-                s3.upload_file(str(quarantine_path), quarantine_bucket, quarantine_key)
-                register_asset(conn, run_id, "quarantine", f"olist_{table_code}_quarantine", quarantine_uri, len(quarantine_frame), quarantine_checksum)
+                quarantine_uri = None
+
+                if len(quarantine_frame):
+                    quarantine_key = (
+                        f"olist/{table_code}/"
+                        f"source_checksum={checksum12}/"
+                        f"quality_{QUALITY_VERSION}/"
+                        f"{table_code}.parquet"
+                    )
+
+                    quarantine_uri = (
+                        f"s3://{quarantine_bucket}/"
+                        f"{quarantine_key}"
+                    )
+
+                    quarantine_frame.to_parquet(
+                        quarantine_path,
+                        index=False,
+                        engine="pyarrow",
+                    )
+
+                    quarantine_checksum = sha256_file(
+                        quarantine_path
+                    )
+
+                    s3.upload_file(
+                        str(quarantine_path),
+                        quarantine_bucket,
+                        quarantine_key,
+                    )
+
+                    quarantine_asset_id = register_asset(
+                        conn,
+                        run_id,
+                        "quarantine",
+                        f"olist_{table_code}_quarantine",
+                        quarantine_uri,
+                        len(quarantine_frame),
+                        quarantine_checksum,
+                    )
+
+                    register_lineage(
+                        conn=conn,
+                        parent_asset_id=int(
+                            source["asset_id"]
+                        ),
+                        child_asset_id=quarantine_asset_id,
+                        relation_type="quarantined_from",
+                        created_by_run_id=run_id,
+                        metadata={
+                            "stage": "quality_gate",
+                            "dataset": table_code,
+                        },
+                    )
 
         record_quality_results(conn, run_id, results)
         finish_run(conn, run_id, "success", len(valid_frame), len(quarantine_frame))

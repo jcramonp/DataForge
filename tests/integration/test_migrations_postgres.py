@@ -16,6 +16,9 @@ EXPECTED_TABLES = {
     "pipeline_run",
     "quality_result",
     "data_asset",
+    "asset_lineage",
+    "dataset_certification",
+    "certification_transition",
     "schema_migrations",
 }
 
@@ -25,6 +28,8 @@ EXPECTED_VIEWS = {
     "pipeline_run_status_summary",
     "pipeline_run_failures",
     "dataset_latest_run",
+    "asset_lineage_edges",
+    "dataset_certification_summary",
 }
 
 

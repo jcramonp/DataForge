@@ -22,6 +22,9 @@ import psycopg
 from src.common.clients import connect_postgres, create_s3_client
 from src.common.settings import load_environment_file
 
+from src.governance.metadata import dataframe_schema_hash
+from src.governance.lineage import register_lineage_edges
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALPHA_TABLES = ("customers", "orders", "order_items", "products")
 GOLD_VERSION = "v1"
@@ -60,7 +63,8 @@ def latest_validated_silver_asset(conn: psycopg.Connection, table_code: str) -> 
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT dv.dataset_version_id,
+            SELECT da.asset_id,
+                   dv.dataset_version_id,
                    dv.source_checksum,
                    da.storage_uri,
                    da.row_count,
@@ -91,11 +95,12 @@ def latest_validated_silver_asset(conn: psycopg.Connection, table_code: str) -> 
         raise RuntimeError(f"No successful validated Silver asset found for '{table_code}'")
 
     return {
-        "dataset_version_id": row[0],
-        "source_checksum": row[1],
-        "storage_uri": row[2],
-        "row_count": int(row[3]),
-        "quality_run_id": row[4],
+        "asset_id": row[0],
+        "dataset_version_id": row[1],
+        "source_checksum": row[2],
+        "storage_uri": row[3],
+        "row_count": int(row[4]),
+        "quality_run_id": row[5],
     }
 
 
@@ -223,6 +228,29 @@ def ensure_gold_dataset_version(conn: psycopg.Connection, source_checksums: dict
         return cur.fetchone()[0]
 
 
+def update_dataset_version_schema(
+    conn: psycopg.Connection,
+    dataset_version_id: int,
+    frame: pd.DataFrame,
+) -> None:
+    """Persist the actual schema hash of a derived dataset."""
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE dataset_version
+            SET schema_hash = %s
+            WHERE dataset_version_id = %s
+            """,
+            (
+                dataframe_schema_hash(
+                    frame
+                ),
+                dataset_version_id,
+            ),
+        )
+
+
 def start_run(conn: psycopg.Connection, dataset_version_id: int, input_rows: int) -> int:
     with conn.cursor() as cur:
         cur.execute(
@@ -242,15 +270,39 @@ def register_asset(
     storage_uri: str,
     row_count: int,
     checksum: str,
-) -> None:
+) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO data_asset (run_id, layer, asset_name, storage_uri, format, row_count, checksum)
-            VALUES (%s, 'gold', 'olist_order_items_gold', %s, 'parquet', %s, %s)
+            INSERT INTO data_asset (
+                run_id,
+                layer,
+                asset_name,
+                storage_uri,
+                format,
+                row_count,
+                checksum
+            )
+            VALUES (
+                %s,
+                'gold',
+                'olist_order_items_gold',
+                %s,
+                'parquet',
+                %s,
+                %s
+            )
+            RETURNING asset_id
             """,
-            (run_id, storage_uri, row_count, checksum),
+            (
+                run_id,
+                storage_uri,
+                row_count,
+                checksum,
+            ),
         )
+
+        return int(cur.fetchone()[0])
 
 
 def finish_run(
@@ -310,6 +362,12 @@ def run_gold_transformation() -> dict[str, Any]:
                     frames["products"],
                 )
 
+                update_dataset_version_schema(
+                    conn,
+                    dataset_version_id,
+                    gold,
+                )
+
                 output_path = Path(tmpdir) / "olist_order_items_gold.parquet"
                 gold.to_parquet(output_path, index=False, engine="pyarrow")
                 checksum = sha256_file(output_path)
@@ -317,7 +375,34 @@ def run_gold_transformation() -> dict[str, Any]:
                 storage_uri = f"s3://{gold_bucket}/{key}"
                 s3.upload_file(str(output_path), gold_bucket, key)
 
-                register_asset(conn, run_id, storage_uri, len(gold), checksum)
+                gold_asset_id = register_asset(
+                    conn,
+                    run_id,
+                    storage_uri,
+                    len(gold),
+                    checksum,
+                )
+
+                register_lineage_edges(
+                    conn,
+                    [
+                        {
+                            "parent_asset_id": int(
+                                metadata["asset_id"]
+                            ),
+                            "child_asset_id": gold_asset_id,
+                            "relation_type": "joined_from",
+                            "created_by_run_id": run_id,
+                            "metadata": {
+                                "stage": "silver_to_gold",
+                                "source_dataset": table_code,
+                            },
+                        }
+                        for table_code, metadata
+                        in sources.items()
+                    ],
+                )
+
                 finish_run(
                     conn,
                     run_id,
@@ -325,6 +410,7 @@ def run_gold_transformation() -> dict[str, Any]:
                     accepted_rows=len(gold),
                     rejected_rows=input_rows - len(gold),
                 )
+
                 conn.commit()
 
                 return {

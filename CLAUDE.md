@@ -31,7 +31,7 @@ Run everything from the repo root; modules import as `src.*`.
   - `python -m src.discovery.run_profiling --contract config/examples/olist.yaml`
   - `python -m src.ingestion.bronze_generic --contract ...`
   - `python -m src.transformations.silver_runner --contract ...`
-  - The Gold runner (`src.transformations.gold_runner`) lives on `feature/31-configurable-gold-engine` until PR #41 merges.
+  - `python -m src.transformations.gold_runner --contract ... [--gold-code X]`
 - Ops: `python -m src.ops.migrate [--status|--dry-run]`, `python -m src.ops.health [--json]`, `python -m src.ops.run_summary [--json]`.
 
 ## Architecture
@@ -39,7 +39,7 @@ Run everything from the repo root; modules import as `src.*`.
 Two generations of pipeline code coexist:
 
 1. **Sprint 1 "Alpha" Olist scripts** (`*_olist.py`): hard-coded for Olist tables, driven by `config/pilot_olist.json`. Orchestrated by `airflow/dags/olist_alpha_pipeline.py`, which shells out to each script inside the container at `/opt/dataforge`.
-2. **Sprint 2 generic engine** (`*_generic.py`, `silver_runner.py`, `connectors/`, `contracts/`, `discovery/engine.py`): driven by a `DataForgeContract`. New features go here. Per the PR template, no client-specific logic goes into generic engines.
+2. **Sprint 2 generic engine** (`*_generic.py`, `silver_runner.py`, `gold_runner.py`, `connectors/`, `contracts/`, `discovery/engine.py`, `governance/`): driven by a `DataForgeContract`. New features go here. Per the PR template, no client-specific logic goes into generic engines.
 
 Key pieces:
 - `src/contracts/models.py`: Pydantic v2 contract.
@@ -56,14 +56,18 @@ Key pieces:
   1. `bronze_generic.ingest_dataset` extracts the source and writes Parquet to the bronze bucket.
   2. `silver_runner` reads the latest *successful* Bronze asset from Postgres, runs `silver_generic.transform_dataset`, then `quality_generic.evaluate_quality_rules` (Great Expectations).
   3. Rows failing `critical` rules go to Quarantine; `warning` rules are recorded but never reject rows.
+  4. `gold_runner` executes the contract's declarative `gold[].plan` over the latest validated Silver assets.
+
+  `src/governance/` owns asset lineage and Draft/Validated/Certified certification. Certification rows are created by a database trigger on `dataset_version`.
 - Metadata pattern used by every stage:
   1. start a `pipeline_run`;
   2. write the Parquet output;
   3. register a `data_asset` with its SHA-256 checksum;
   4. finish the run as success. On error the stage rolls back, records the run as failed, and re-raises.
-- Logging: generic stages wrap their work in `run_context(stage, client, project, dataset)` and call `bind_context(run_id=...)` once the run row exists, so every log line (JSON outside local) is traceable. New stages (Gold, orchestration) should follow the same pattern. CLIs call `configure_logging()`.
+- Logging: generic stages (Bronze, Silver, Gold) wrap their work in `run_context(stage, client, project, dataset)` and call `bind_context(run_id=...)` once the run row exists, so every log line (JSON outside local) is traceable. New stages and orchestration should follow the same pattern. CLIs call `configure_logging()`.
+- Runners are CLI entrypoints. Import them directly (`from src.transformations.gold_runner import ...`), never re-export them from a package `__init__`: that makes `python -m` execute them twice.
 - Object key layout: `{client}/{project}/{dataset}/source_checksum={sha12}/[validated_v1/|quality_v1/]{dataset}.parquet`.
-- Database: schema changes go in a **new** `database/migrations/NNNN_name.sql`. It must be idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`), because Docker init and the runner both apply files. Never edit an applied migration: the checksum check fails. Operational views (`pipeline_run_status_summary`, `pipeline_run_failures`, `dataset_latest_run`) back `src/ops/run_summary.py`.
+- Database: schema changes go in a **new** `database/migrations/NNNN_name.sql` (4 digits). It must be idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`) and must not contain `BEGIN`/`COMMIT`, because Docker init and the runner both apply files and the runner owns the transaction. Never edit an applied migration: the checksum check fails. Operational views (`pipeline_run_status_summary`, `pipeline_run_failures`, `dataset_latest_run`) back `src/ops/run_summary.py`.
 - `src/api/main.py`: FastAPI control plane.
   - Most UI endpoints serve **in-memory mock state** (`MOCK_RUNS`, …); `/api/pipelines/trigger` and `/api/copilot/suggest` are not wired to real runners or an LLM yet.
   - `/api/ready` and `/api/ops/summary` are real.

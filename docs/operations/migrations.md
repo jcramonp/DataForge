@@ -5,8 +5,9 @@ The PostgreSQL control-plane schema is versioned in `database/migrations/` and a
 | Version | File | Content |
 |---|---|---|
 | 0001 | `0001_control_plane_schema.sql` | Sprint 1 tables and indexes (formerly `database/schema.sql`) |
-| 0002 | `0002_governance_views.sql` | Lineage and quality governance views (formerly `database/governance_views.sql`) |
-| 0003 | `0003_operational_views.sql` | Run status, failure and latest-run views for operations (#32) |
+| 0002 | `0002_lineage_certification.sql` | Asset lineage, dataset certification and transition history, plus the Draft-on-new-version trigger (#23; formerly `database/migrations/002_lineage_certification.sql`) |
+| 0003 | `0003_governance_views.sql` | Lineage, quality, lineage-edge and certification summary views (formerly `database/governance_views.sql`) |
+| 0004 | `0004_operational_views.sql` | Run status, failure and latest-run views for operations (#32) |
 
 ## Commands
 
@@ -35,13 +36,17 @@ Because both paths may run the same file, **migrations must be idempotent**:
 
 - `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS`, `CREATE OR REPLACE VIEW`;
 - `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`;
-- guarded `DO $$ ... $$` blocks for constraints.
+- `DROP TRIGGER IF EXISTS` before `CREATE TRIGGER`, `CREATE OR REPLACE FUNCTION`;
+- guarded `DO $$ ... $$` blocks for constraints;
+- `INSERT ... ON CONFLICT DO NOTHING` for backfills.
+
+Do not put `BEGIN`/`COMMIT` in a migration: the runner wraps each file in its own transaction.
 
 A unit test rejects non-idempotent `CREATE` statements. CI applies every migration twice on an empty database and adopts a database bootstrapped from raw SQL.
 
 ## Adding a migration
 
-1. Create `database/migrations/0004_short_description.sql` (next number, lowercase, underscores).
+1. Create `database/migrations/0005_short_description.sql` (next number, lowercase, underscores).
 2. Write idempotent SQL. Prefer additive changes (new nullable columns, new tables/views) so the previous application version keeps working. This is what makes rollback safe.
 3. Run `python -m src.ops.migrate` locally and `python -m unittest tests.test_ops_migrate`.
 4. Commit the migration together with the code that uses it.

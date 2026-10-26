@@ -57,6 +57,8 @@ class DiscoverMigrationsTests(unittest.TestCase):
             self.assertNotRegex(sql, r"CREATE TABLE (?!IF NOT EXISTS)")
             self.assertNotRegex(sql, r"CREATE INDEX (?!IF NOT EXISTS)")
             self.assertNotRegex(sql, r"CREATE VIEW")
+            # The runner owns the transaction; explicit control would break it.
+            self.assertNotRegex(sql, r"(?m)^\s*(BEGIN|COMMIT)\s*;")
 
 
 class PlanMigrationsTests(unittest.TestCase):

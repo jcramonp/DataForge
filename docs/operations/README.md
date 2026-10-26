@@ -17,7 +17,7 @@ Operational documentation for issue **#32 — CI/CD, observability and deploymen
 |---|---|
 | **Lint (ruff)** | Syntax errors, undefined names, unused imports/variables (`ruff.toml`) |
 | **Unit & regression tests** | Full `unittest` suite on Python 3.11 and 3.13: Sprint 1 Olist modules, Sprint 2 contracts/connectors/profiling/Silver/quality, API, settings, logging, migrations, readiness |
-| **Integration (PostgreSQL + MinIO)** | Applies migrations twice to an empty PostgreSQL 16 (idempotency), runs `tests/integration` — migration workflow plus an end-to-end generic pipeline (Bronze → Silver → Quality Gate → Quarantine) on a non-Olist fixture — and the readiness CLI |
+| **Integration (PostgreSQL + MinIO)** | Applies migrations twice to an empty PostgreSQL 16 (idempotency), runs `tests/integration` — migration workflow plus an end-to-end generic pipeline (Bronze → Silver → Quality Gate → Quarantine → Gold, with certification bootstrap) on a non-Olist fixture — and the readiness CLI |
 | **Frontend build** | `npm ci` + `npm run build` |
 | **Compose config & API image** | `docker compose config` (with and without the `api` profile), builds the API image and smoke-tests its liveness endpoint |
 | **CI status** | Aggregates the jobs above; fails if any failed, was cancelled or skipped |

@@ -11,6 +11,7 @@ Rules (see docs/operations/migrations.md):
   Compose also runs them. CI applies every migration twice to enforce this.
 - An applied migration must never be edited; add a new file instead. A
   checksum mismatch stops the run.
+- Files must not contain ``BEGIN``/``COMMIT``: the runner owns the transaction.
 
 Usage::
 
@@ -37,7 +38,7 @@ from src.common.log import configure_logging
 from src.common.settings import PROJECT_ROOT
 
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("src.ops.migrate")
 
 MIGRATIONS_DIR = PROJECT_ROOT / "database" / "migrations"
 

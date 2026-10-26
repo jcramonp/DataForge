@@ -19,6 +19,7 @@ python -m src.ops.health                     # expect READY
 python -m src.discovery.run_profiling --contract config/examples/olist.yaml
 python -m src.ingestion.bronze_generic --contract config/examples/olist.yaml
 python -m src.transformations.silver_runner --contract config/examples/olist.yaml
+python -m src.transformations.gold_runner --contract config/examples/olist.yaml
 python -m src.ops.run_summary
 
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000      # terminal 1

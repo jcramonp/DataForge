@@ -15,7 +15,7 @@ Example:
 ```text
 $ python -m src.ops.health
 OK   configuration        0.0 ms  environment=test
-OK   postgres            34.4 ms  connected; schema version 0003
+OK   postgres            34.4 ms  connected; schema version 0004
 OK   object_storage     228.3 ms  4 buckets reachable
 OK   contracts           33.8 ms  2 contracts valid
 READY
@@ -31,11 +31,11 @@ READY
 - **API requests:** every request gets an `X-Request-ID`, either propagated from the caller or generated. It is returned in the response header and logged with method, path, status and `duration_ms`.
 - Fields whose name contains `password`, `secret`, `token`, `authorization` or `api_key` are redacted; noisy AWS client loggers are kept at `WARNING`.
 
-Instrumented entrypoints: `src.ingestion.bronze_generic`, `src.transformations.silver_runner`, `src.ops.*`, `src.api.main`. New stages (Gold #31, orchestration #24) should use the same `run_context` / `bind_context` pattern.
+Instrumented entrypoints: `src.ingestion.bronze_generic`, `src.transformations.silver_runner`, `src.transformations.gold_runner`, `src.ops.*`, `src.api.main`. Orchestration (#24) should use the same `run_context` / `bind_context` pattern.
 
 ## Run metrics and status summaries
 
-Migration `0003_operational_views.sql` adds three views:
+Migration `0004_operational_views.sql` adds three views:
 
 - `pipeline_run_status_summary`: runs per stage and status, row totals, average duration and last start;
 - `pipeline_run_failures`: each failed run with client, project, dataset, version, duration and error message;

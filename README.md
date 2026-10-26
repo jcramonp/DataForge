@@ -126,7 +126,7 @@ python -m src.transformations.silver_runner --contract config/examples/olist.yam
 ```
 
 #### D. Configurable Gold Analytical Engine
-Execute declarative transformation plans (joins, arithmetic derivations, aggregations) to produce Gold datasets (available once issue #31 / PR #41 is merged into `develop`):
+Execute declarative transformation plans (joins, arithmetic derivations, aggregations) to produce Gold datasets:
 ```bash
 python -m src.transformations.gold_runner --contract config/examples/olist.yaml
 ```
