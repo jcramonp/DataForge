@@ -39,7 +39,14 @@ class DataforgePipelineDagTests(unittest.TestCase):
     def test_single_generic_dag_is_parameterized_by_contract(self):
         self.assertEqual(
             set(self.dag.params.keys()),
-            {"contract", "datasets", "gold", "stages", "certification"},
+            {
+                "contract",
+                "contract_id",
+                "datasets",
+                "gold",
+                "stages",
+                "certification",
+            },
         )
         self.assertIsNone(self.dag.schedule)
         self.assertFalse(self.dag.catchup)

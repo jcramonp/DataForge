@@ -93,10 +93,21 @@ def _run_stage(stage: str, plan: dict[str, Any], orchestration_run_id: int, targ
     },
     params={
         "contract": Param(
-            "config/examples/olist.yaml",
-            type="string",
-            minLength=1,
-            description="Contract path, relative to the repository root (or absolute inside the workers)",
+            None,
+            type=["string", "null"],
+            description=(
+                "Legacy contract path. Use either contract "
+                "or contract_id, never both."
+            ),
+        ),
+        "contract_id": Param(
+            None,
+            type=["integer", "null"],
+            minimum=1,
+            description=(
+                "Immutable configuration_contract id from "
+                "the PostgreSQL control plane."
+            ),
         ),
         "datasets": Param(
             [],
@@ -128,19 +139,55 @@ def _run_stage(stage: str, plan: dict[str, Any], orchestration_run_id: int, targ
 def dataforge_pipeline():
     @task(task_id="resolve_plan", retries=0)
     def resolve_plan() -> dict[str, Any]:
-        from src.orchestration.plan import PlanError, build_plan
+        from src.orchestration.plan import (
+            PlanError,
+            build_persisted_plan,
+            build_plan,
+        )
 
         params = get_current_context()["params"]
-        try:
-            plan = build_plan(
-                params["contract"],
-                datasets=params.get("datasets") or None,
-                gold=params.get("gold") or None,
-                stages=params.get("stages") or None,
-                certification=params.get("certification", "evaluate"),
+
+        contract = params.get("contract")
+        contract_id = params.get("contract_id")
+
+        has_contract = bool(
+            contract
+            and str(contract).strip()
+        )
+        has_contract_id = contract_id is not None
+
+        if has_contract == has_contract_id:
+            raise AirflowFailException(
+                "Exactly one of contract or contract_id "
+                "must be provided"
             )
+
+        try:
+            if has_contract_id:
+                plan = build_persisted_plan(
+                    int(contract_id),
+                    datasets=params.get("datasets") or None,
+                    gold=params.get("gold") or None,
+                    stages=params.get("stages") or None,
+                    certification=params.get(
+                        "certification",
+                        "evaluate",
+                    ),
+                )
+            else:
+                plan = build_plan(
+                    str(contract),
+                    datasets=params.get("datasets") or None,
+                    gold=params.get("gold") or None,
+                    stages=params.get("stages") or None,
+                    certification=params.get(
+                        "certification",
+                        "evaluate",
+                    ),
+                )
         except PlanError as exc:
             raise AirflowFailException(str(exc)) from exc
+
         return plan.to_dict()
 
     @task(retries=0)

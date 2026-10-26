@@ -1,44 +1,46 @@
 import React from 'react';
 import { Database, ShieldAlert, CheckCircle2, Play, ArrowRight, Activity } from 'lucide-react';
 
-export default function OverviewView({ overview, onNavigate, onTriggerSample }) {
+export default function OverviewView({ overview, error, onNavigate, onChoosePipeline }) {
   const summary = overview?.summary || {};
   const runs = overview?.recent_runs || [];
+
+  if (!overview) return <div className="card">{error ? 'Overview unavailable. Use Refresh to retry.' : 'Loading persisted overview…'}</div>;
 
   return (
     <div>
       {/* KPI Cards */}
       <div className="kpi-grid">
         <div className="kpi-card">
-          <div className="kpi-label">Active Sources</div>
-          <div className="kpi-value">{summary.total_sources || 3}</div>
-          <div className="kpi-sub">CSV, PostgreSQL, REST</div>
+          <div className="kpi-label">Registered Sources</div>
+          <div className="kpi-value">{summary.total_sources ?? 0}</div>
+          <div className="kpi-sub">Registered in the control plane</div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-label">Registered Datasets</div>
-          <div className="kpi-value">{summary.total_datasets || 6}</div>
+          <div className="kpi-value">{summary.total_datasets ?? 0}</div>
           <div className="kpi-sub">Across Bronze & Silver</div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-label">Total Rows Processed</div>
-          <div className="kpi-value">{(summary.total_rows_processed || 359903).toLocaleString()}</div>
-          <div className="kpi-sub">Through Bronze & Silver</div>
+          <div className="kpi-value">{(summary.total_rows_processed ?? 0).toLocaleString()}</div>
+          <div className="kpi-sub">Cumulative successful Bronze input</div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-label">Quarantine Records</div>
           <div className="kpi-value" style={{ color: 'var(--negative)' }}>
-            {summary.total_quarantined_rows || 4}
+            {summary.total_quarantined_rows ?? 0}
           </div>
-          <div className="kpi-sub">Critical violations separated</div>
+          <div className="kpi-sub">Cumulative Silver rejections</div>
         </div>
 
         <div className="kpi-card">
           <div className="kpi-label">Certified Datasets</div>
           <div className="kpi-value" style={{ color: 'var(--positive)' }}>
-            {summary.certified_datasets || 2} <span style={{ fontSize: '14px', color: '#6b7280' }}>({summary.certification_rate_pct || 33.3}%)</span>
+            {summary.certified_datasets ?? 0} <span style={{ fontSize: '14px', color: '#6b7280' }}>({summary.certification_rate_pct ?? 0}%)</span>
           </div>
           <div className="kpi-sub">Governed & ready for Gold</div>
         </div>
@@ -51,9 +53,9 @@ export default function OverviewView({ overview, onNavigate, onTriggerSample }) 
             <h3 className="card-title">DataForge End-to-End Lifecycle</h3>
             <p className="card-subtitle">Operate data assets from source registration to certification without direct database queries.</p>
           </div>
-          <button className="btn btn-primary btn-sm" onClick={onTriggerSample}>
+          <button className="btn btn-primary btn-sm" onClick={onChoosePipeline}>
             <Play size={13} />
-            <span>Trigger Demo Pipeline</span>
+            <span>Choose Pipeline</span>
           </button>
         </div>
 
@@ -143,13 +145,14 @@ export default function OverviewView({ overview, onNavigate, onTriggerSample }) 
                 <th>Layer</th>
                 <th>Status</th>
                 <th>Input Rows</th>
-                <th>Accepted (Silver)</th>
-                <th>Quarantined</th>
+                <th>Output Rows</th>
+                <th>Quarantined (Silver)</th>
                 <th>Duration</th>
                 <th>Timestamp</th>
               </tr>
             </thead>
             <tbody>
+              {runs.length === 0 && <tr><td colSpan={10}>No persisted runs in this scope.</td></tr>}
               {runs.map((run) => (
                 <tr key={run.run_id}>
                   <td className="mono">#{run.run_id}</td>
@@ -159,17 +162,17 @@ export default function OverviewView({ overview, onNavigate, onTriggerSample }) 
                     <span className="badge badge-neutral">{run.layer}</span>
                   </td>
                   <td>
-                    <span className="badge badge-positive">
-                      <CheckCircle2 size={11} />
+                    <span className={`badge ${run.status === 'success' ? 'badge-positive' : run.status === 'failed' ? 'badge-negative' : 'badge-warning'}`}>
+                      {run.status === 'success' && <CheckCircle2 size={11} />}
                       {run.status}
                     </span>
                   </td>
-                  <td className="tabular-nums">{run.input_rows.toLocaleString()}</td>
+                  <td className="tabular-nums">{run.input_rows == null ? '—' : run.input_rows.toLocaleString()}</td>
                   <td className="tabular-nums" style={{ color: 'var(--positive)', fontWeight: 600 }}>
-                    {run.accepted_rows.toLocaleString()}
+                    {run.accepted_rows == null ? '—' : run.accepted_rows.toLocaleString()}
                   </td>
                   <td>
-                    {run.rejected_rows > 0 ? (
+                    {run.layer !== 'silver_quality_gate' ? <span style={{ color: 'var(--muted)' }}>—</span> : run.rejected_rows > 0 ? (
                       <span className="badge badge-negative tabular-nums">
                         <ShieldAlert size={11} />
                         {run.rejected_rows} rows
@@ -178,7 +181,7 @@ export default function OverviewView({ overview, onNavigate, onTriggerSample }) 
                       <span style={{ color: 'var(--muted)' }}>0</span>
                     )}
                   </td>
-                  <td className="tabular-nums">{run.duration_sec}s</td>
+                  <td className="tabular-nums">{run.duration_sec == null ? '—' : `${run.duration_sec}s`}</td>
                   <td style={{ color: 'var(--muted)', fontSize: '12px' }}>
                     {new Date(run.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </td>

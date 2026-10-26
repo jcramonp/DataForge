@@ -1,81 +1,35 @@
-import React, { useState } from 'react';
-import { Layers, Copy, Check, HardDrive } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { fetchAssets } from '../services/api';
+import { Copy, Check } from 'lucide-react';
 
-const MOCK_ASSETS = [
-  {
-    asset_id: 1,
-    layer: 'bronze',
-    asset_name: 'olist_customers_bronze',
-    storage_uri: 's3://dataforge-bronze/olist/olist-alpha/customers/source_checksum=a1b2c3d4/customers.parquet',
-    format: 'parquet',
-    row_count: 99441,
-    checksum: '34e1a7b98f219c4d8721bf10aa22e189',
-    created_at: '2026-10-25 13:30:00',
-  },
-  {
-    asset_id: 2,
-    layer: 'bronze',
-    asset_name: 'olist_orders_bronze',
-    storage_uri: 's3://dataforge-bronze/olist/olist-alpha/orders/source_checksum=b2c3d4e5/orders.parquet',
-    format: 'parquet',
-    row_count: 99441,
-    checksum: '9f21b7c89a012d4e8721bf10aa22e189',
-    created_at: '2026-10-25 13:31:00',
-  },
-  {
-    asset_id: 3,
-    layer: 'silver',
-    asset_name: 'olist_customers_silver_validated',
-    storage_uri: 's3://dataforge-silver/olist/olist-alpha/customers/source_checksum=a1b2c3d4/validated_v1/customers.parquet',
-    format: 'parquet',
-    row_count: 99441,
-    checksum: '82f1b0a99c716d1234901baefd7621cc',
-    created_at: '2026-10-25 13:32:10',
-  },
-  {
-    asset_id: 4,
-    layer: 'silver',
-    asset_name: 'olist_products_silver_validated',
-    storage_uri: 's3://dataforge-silver/olist/olist-alpha/products/source_checksum=3e6569628a17/validated_v1/products.parquet',
-    format: 'parquet',
-    row_count: 32947,
-    checksum: '551a029fe871ac99120489baec1239aa',
-    created_at: '2026-10-25 13:40:12',
-  },
-  {
-    asset_id: 5,
-    layer: 'quarantine',
-    asset_name: 'olist_products_quarantine',
-    storage_uri: 's3://dataforge-quarantine/olist/olist-alpha/products/source_checksum=3e6569628a17/quality_v1/products.parquet',
-    format: 'parquet',
-    row_count: 4,
-    checksum: '4457e8fa01b2389d8719ab238129ccbb',
-    created_at: '2026-10-25 13:40:12',
-  },
-  {
-    asset_id: 6,
-    layer: 'gold',
-    asset_name: 'olist_order_items_summary_gold',
-    storage_uri: 's3://dataforge-gold/olist/olist-alpha/order_items_summary/gold_v1/order_items_summary.parquet',
-    format: 'parquet',
-    row_count: 112650,
-    checksum: '99014bdcf87e12aa4419cb772019aaef',
-    created_at: '2026-10-25 13:45:00',
-  },
-];
-
-export default function AssetsView() {
+export default function AssetsView({ scope = {} }) {
   const [filterLayer, setFilterLayer] = useState('all');
   const [copiedId, setCopiedId] = useState(null);
+  const [assets, setAssets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [limit, setLimit] = useState(100);
+  const [refresh, setRefresh] = useState(0);
+  const scopeKey = JSON.stringify(scope);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setAssets([]);
+    fetchAssets({ ...scope, limit, layer: filterLayer === 'all' ? undefined : filterLayer })
+      .then((rows) => { if (!cancelled) setAssets(rows); })
+      .catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [scopeKey, filterLayer, limit, refresh]);
+  const filtered = assets;
 
-  const filtered = filterLayer === 'all'
-    ? MOCK_ASSETS
-    : MOCK_ASSETS.filter((a) => a.layer === filterLayer);
-
-  const handleCopy = (uri, id) => {
-    navigator.clipboard.writeText(uri);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const handleCopy = async (uri, id) => {
+    try {
+      await navigator.clipboard.writeText(uri);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) { setError(`Unable to copy URI: ${err.message}`); }
   };
 
   const getLayerBadge = (layer) => {
@@ -95,6 +49,10 @@ export default function AssetsView() {
 
   return (
     <div>
+      {error && <p role="alert">{error}</p>}
+      <button className="btn btn-secondary btn-sm" onClick={() => setRefresh((n) => n + 1)}>Refresh assets</button>
+      <label> Maximum assets <select aria-label="Maximum assets" value={limit} onChange={(e) => setLimit(Number(e.target.value))}><option value={100}>100</option><option value={200}>200</option></select></label>
+      <p>{loading ? 'Loading persisted assets…' : `Showing ${assets.length} most recent assets (limit ${limit}).`}</p>
       {/* Filter Tabs */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
         {['all', 'bronze', 'silver', 'quarantine', 'gold'].map((layer) => (
@@ -129,14 +87,15 @@ export default function AssetsView() {
               </tr>
             </thead>
             <tbody>
+              {!loading && !error && assets.length === 0 && <tr><td colSpan={7}>No persisted assets in this scope.</td></tr>}
               {filtered.map((asset) => (
                 <tr key={asset.asset_id}>
-                  <td><strong>{asset.asset_name}</strong></td>
+                  <td><strong>{asset.asset_name}</strong><div className="mono">#{asset.asset_id} · {asset.client_code}/{asset.project_code}/{asset.source_code}/{asset.dataset_code}</div></td>
                   <td>{getLayerBadge(asset.layer)}</td>
                   <td><span className="badge badge-neutral mono">{asset.format}</span></td>
-                  <td className="tabular-nums">{asset.row_count.toLocaleString()}</td>
+                  <td className="tabular-nums">{asset.row_count == null ? '—' : asset.row_count.toLocaleString()}</td>
                   <td className="mono" style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                    {asset.checksum.slice(0, 16)}…
+                    {asset.checksum ? `${asset.checksum.slice(0, 16)}…` : '—'}
                   </td>
                   <td style={{ maxWidth: '320px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

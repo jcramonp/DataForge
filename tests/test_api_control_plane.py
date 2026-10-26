@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.governance.certification import CertificationTransitionError
 
 
 class ControlPlaneApiTests(unittest.TestCase):
@@ -19,26 +20,80 @@ class ControlPlaneApiTests(unittest.TestCase):
         self.assertEqual(data["status"], "healthy")
         self.assertIn("version", data)
 
-    def test_overview_endpoint(self):
+    @patch("src.api.main.fetch_overview")
+    @patch("src.api.main.connect_postgres")
+    def test_overview_endpoint(self, connect, overview):
+        overview.return_value = {
+            "source": "database", "summary": {"total_datasets": 0},
+            "recent_runs": [], "active_sources": [],
+        }
         response = self.client.get("/api/overview")
         self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("summary", data)
-        self.assertIn("total_datasets", data["summary"])
-        self.assertIn("recent_runs", data)
+        self.assertEqual(response.json(), overview.return_value)
 
-    def test_sources_endpoint(self):
-        response = self.client.get("/api/sources")
-        self.assertEqual(response.status_code, 200)
-        sources = response.json()
-        self.assertGreaterEqual(len(sources), 1)
-        self.assertEqual(sources[0]["code"], "olist-csv")
+    @patch("src.api.main.list_sources")
+    @patch("src.api.main.connect_postgres")
+    def test_sources_endpoint(
+        self,
+        mock_connect_postgres,
+        mock_list_sources,
+    ):
+        conn = MagicMock()
+        mock_connect_postgres.return_value.__enter__.return_value = conn
+
+        mock_list_sources.return_value = [
+            {
+                "source_id": 1,
+                "code": "olist-csv",
+                "name": "Olist CSV",
+                "type": "file",
+                "client_code": "olist",
+                "client_name": "Olist",
+                "project_code": "olist-alpha",
+                "project_name": "Olist Alpha",
+                "connection_reference": "env:DATA_RAW_DIR",
+                "active": True,
+                "status": "active",
+                "created_at": "2026-10-26T00:00:00Z",
+                "contract_id": 1,
+                "contract_revision": 1,
+                "datasets": [
+                    {
+                        "dataset_id": 1,
+                        "code": "customers",
+                        "name": "Customers",
+                        "classification": "internal",
+                        "owner": None,
+                        "columns_count": 5,
+                    }
+                ],
+            }
+        ]
+
+        response = self.client.get(
+            "/api/sources"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.json()[0]["code"],
+            "olist-csv",
+        )
+
+        mock_list_sources.assert_called_once_with(
+            conn,
+            client_code=None,
+            project_code=None,
+        )
 
     def test_test_connection_endpoint(self):
         payload = {
             "source_type": "file",
-            "connection_reference": "env:DATA_RAW_DIR",
-            "target_object": "data/raw/olist/*.csv",
+            "target_object": "tests/fixtures/e2e/orders.csv",
         }
         response = self.client.post("/api/sources/test-connection", json=payload)
         self.assertEqual(response.status_code, 200)
@@ -47,13 +102,73 @@ class ControlPlaneApiTests(unittest.TestCase):
         self.assertEqual(data["source_type"], "file")
         self.assertGreater(data["latency_ms"], 0)
 
-    def test_datasets_endpoint(self):
-        response = self.client.get("/api/datasets")
-        self.assertEqual(response.status_code, 200)
-        datasets = response.json()
-        self.assertGreaterEqual(len(datasets), 1)
-        codes = [d["code"] for d in datasets]
-        self.assertIn("customers", codes)
+    @patch("src.api.main.list_datasets")
+    @patch("src.api.main.connect_postgres")
+    def test_datasets_endpoint(
+        self,
+        mock_connect_postgres,
+        mock_list_datasets,
+    ):
+        conn = MagicMock()
+        mock_connect_postgres.return_value.__enter__.return_value = conn
+
+        mock_list_datasets.return_value = [
+            {
+                "dataset_id": 1,
+                "code": "customers",
+                "name": "Customers",
+                "client": "olist",
+                "client_name": "Olist",
+                "project": "olist-alpha",
+                "project_name": "Olist Alpha",
+                "source_code": "olist-csv",
+                "source_type": "file",
+                "classification": "internal",
+                "owner": None,
+                "certification_status": "draft",
+                "columns_count": 1,
+                "primary_keys": ["customer_id"],
+                "rules_count": 1,
+                "transformations_count": 0,
+                "gold_configured": False,
+                "layers": {
+                    "bronze": False,
+                    "silver": False,
+                    "quarantine": False,
+                    "gold": False,
+                },
+                "schema": [
+                    {
+                        "name": "customer_id",
+                        "type": "string",
+                        "nullable": False,
+                        "classification": "internal",
+                        "description": None,
+                    }
+                ],
+            }
+        ]
+
+        response = self.client.get(
+            "/api/datasets"
+        )
+
+        self.assertEqual(
+            response.status_code,
+            200,
+        )
+
+        self.assertEqual(
+            response.json()[0]["code"],
+            "customers",
+        )
+
+        mock_list_datasets.assert_called_once_with(
+            conn,
+            client_code=None,
+            project_code=None,
+            source_code=None,
+        )
 
     @patch("src.api.main.get_latest_profile")
     @patch("src.api.main.connect_postgres")
@@ -159,51 +274,107 @@ class ControlPlaneApiTests(unittest.TestCase):
             response.json()["detail"],
         )
 
-    def test_quarantine_endpoint(self):
+    @patch("src.api.main.get_dataset_quarantine_context")
+    @patch("src.api.main.connect_postgres")
+    def test_quarantine_requires_active_contract(self, connect, context):
+        context.return_value = {"asset": {"asset_id": 1}, "contract_id": None}
         response = self.client.get("/api/datasets/products/quarantine")
-        self.assertEqual(response.status_code, 200)
-        records = response.json()
-        self.assertGreater(len(records), 0)
-        self.assertEqual(records[0]["severity"], "critical")
-        self.assertEqual(records[0]["failed_field"], "product_weight_g")
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("no active configuration contract", response.json()["detail"])
 
-    def test_trigger_pipeline_endpoint(self):
-        response = self.client.post("/api/pipelines/trigger", json={"dataset": "products"})
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("run", data)
-        self.assertEqual(data["run"]["dataset"], "products")
-        self.assertEqual(data["run"]["status"], "success")
+    @patch("src.api.main.AirflowClient")
+    @patch("src.api.main.build_conf")
+    @patch("src.api.main.build_persisted_plan")
+    def test_trigger_pipeline_endpoint(
+        self,
+        mock_build_plan,
+        mock_build_conf,
+        mock_airflow_class,
+    ):
+        plan = MagicMock()
+        plan.datasets = ["products"]
+        plan.gold = []
+        plan.stages = [
+            "bronze",
+            "profiling",
+            "silver",
+        ]
+        plan.certification = "evaluate"
 
-    def test_assets_endpoint(self):
+        mock_build_plan.return_value = plan
+
+        conf = {
+            "contract_id": 17,
+            "datasets": ["products"],
+            "gold": [],
+            "stages": [
+                "bronze",
+                "profiling",
+                "silver",
+            ],
+            "certification": "evaluate",
+        }
+
+        mock_build_conf.return_value = conf
+
+        airflow = mock_airflow_class.from_env.return_value
+        airflow.trigger.return_value = {
+            "dag_run_id": "manual__api-test",
+            "state": "queued",
+        }
+
+        response = self.client.post(
+            "/api/pipelines/trigger",
+            json={
+                "contract_id": 17,
+                "datasets": ["products"],
+                "stages": [
+                    "bronze",
+                    "profiling",
+                    "silver",
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 202)
+
+        body = response.json()
+
+        self.assertEqual(
+            body["external_run_id"],
+            "manual__api-test",
+        )
+        self.assertEqual(body["state"], "queued")
+        self.assertEqual(body["contract_id"], 17)
+
+    @patch("src.api.main.list_assets")
+    @patch("src.api.main.connect_postgres")
+    def test_assets_endpoint(self, connect, assets):
+        assets.return_value = []
         response = self.client.get("/api/assets")
         self.assertEqual(response.status_code, 200)
-        assets = response.json()
-        layers = {a["layer"] for a in assets}
-        self.assertIn("bronze", layers)
-        self.assertIn("silver", layers)
-        self.assertIn("quarantine", layers)
-        self.assertIn("gold", layers)
+        self.assertEqual(response.json(), [])
 
-    def test_lineage_endpoint(self):
+    @patch("src.api.main.get_lineage_graph")
+    @patch("src.api.main.connect_postgres")
+    def test_lineage_endpoint(self, connect, graph):
+        graph.return_value = {"nodes": [], "links": []}
         response = self.client.get("/api/lineage")
         self.assertEqual(response.status_code, 200)
-        lineage = response.json()
-        self.assertIn("nodes", lineage)
-        self.assertIn("links", lineage)
+        self.assertEqual(response.json(), graph.return_value)
 
-    def test_certification_endpoints(self):
-        # GET certification
-        response = self.client.get("/api/certification")
-        self.assertEqual(response.status_code, 200)
-        cert_list = response.json()
-        self.assertGreater(len(cert_list), 0)
-
-        # UPDATE certification
-        update_payload = {"status": "certified", "certified_by": "gabriela611"}
-        res_post = self.client.post("/api/certification/order_items", json=update_payload)
-        self.assertEqual(res_post.status_code, 200)
-        self.assertEqual(res_post.json()["new_status"], "certified")
+    @patch("src.api.main.transition_certification",
+           side_effect=CertificationTransitionError("Invalid certification transition: draft -> certified"))
+    @patch("src.api.main.resolve_latest_dataset_version")
+    @patch("src.api.main.connect_postgres")
+    def test_certification_cannot_skip_validation(self, connect, resolve, transition):
+        resolve.return_value = {"dataset_version_id": 11}
+        response = self.client.post(
+            "/api/certification/order_items",
+            json={"status": "certified", "certified_by": "test"},
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("draft -> certified", response.json()["detail"])
 
     def test_copilot_suggest_endpoint(self):
         payload = {

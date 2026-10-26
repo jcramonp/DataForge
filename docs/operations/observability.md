@@ -51,7 +51,7 @@ curl localhost:8000/api/ops/summary    # API (source: "database")
 
 Totals include `total_runs`, `successful_runs`, `failed_runs`, `running_runs`, `failure_rate` and `rejected_rows`. A run stuck in `running` shows up in `running_runs` and in `dataset_latest_run`.
 
-In `local`, if PostgreSQL is offline the API summarizes the in-memory demo runs (`source: "mock"`) so the UI keeps working. In `test`/`aws` it returns `503` instead of hiding a broken control plane.
+In every environment, if PostgreSQL is offline the API returns `503`. Operational summaries and Overview never substitute demo runs for unavailable persisted data. Successful operational summaries identify `source: "database"`.
 
 ## Tracing a failed pipeline
 

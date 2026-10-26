@@ -1,164 +1,771 @@
-import React, { useState, useEffect } from 'react';
-import { triggerPipeline } from '../services/api';
-import { Play, CheckCircle2, ShieldAlert, Clock, Filter, Loader2 } from 'lucide-react';
+import React, {
+  useEffect,
+  useState,
+} from 'react';
 
-export default function PipelinesView({ overview, onRefresh }) {
-  const [runs, setRuns] = useState(overview?.recent_runs || []);
+import {
+  AlertCircle,
+  CheckCircle2,
+  Clock,
+  Loader2,
+  Play,
+  RefreshCw,
+  ServerCog,
+  XCircle,
+} from 'lucide-react';
+
+import { matchesSource } from '../services/scope';
+
+import {
+  fetchPipelineRun,
+  fetchRuns,
+  fetchSources,
+  triggerPipeline,
+} from '../services/api';
+
+
+const TERMINAL_STATES = new Set([
+  'success',
+  'failed',
+]);
+
+
+function sleep(milliseconds) {
+  return new Promise(
+    (resolve) => setTimeout(resolve, milliseconds),
+  );
+}
+
+
+function statusClass(status) {
+  if (status === 'success') {
+    return 'badge-positive';
+  }
+
+  if (status === 'failed') {
+    return 'badge-negative';
+  }
+
+  return 'badge-warning';
+}
+
+
+function statusIcon(status) {
+  if (status === 'success') {
+    return <CheckCircle2 size={11} />;
+  }
+
+  if (status === 'failed') {
+    return <XCircle size={11} />;
+  }
+
+  return <Clock size={11} />;
+}
+
+
+function sourceCode(source) {
+  return (
+    source.source_code
+    || source.code
+    || `source-${source.source_id}`
+  );
+}
+
+
+function sourceName(source) {
+  return (
+    source.source_name
+    || source.name
+    || sourceCode(source)
+  );
+}
+
+
+export default function PipelinesView({
+  scope = {},
+  onRefresh,
+}) {
+  const [sources, setSources] = useState([]);
+  const [runs, setRuns] = useState([]);
+
+  const [
+    selectedContractId,
+    setSelectedContractId,
+  ] = useState('');
+
+  const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
-  const [selectedDataset, setSelectedDataset] = useState('products');
-  const [targetLayer, setTargetLayer] = useState('silver_quality_gate');
-  const [statusMessage, setStatusMessage] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const [liveRun, setLiveRun] = useState(null);
+  const [triggerResult, setTriggerResult] = useState(null);
+
+  const [error, setError] = useState(null);
+
+
+  const loadControlPlane = async () => {
+    const [sourceRows, runRows] = await Promise.all([
+      fetchSources(scope),
+      fetchRuns(50, scope),
+    ]);
+
+    const executableSources = sourceRows.filter(
+      (source) => source.contract_id && matchesSource(source, scope),
+    );
+
+    setSources(executableSources);
+    setRuns(runRows);
+
+    setSelectedContractId((current) => {
+      if (
+        current
+        && executableSources.some(
+          (source) =>
+            String(source.contract_id) === current,
+        )
+      ) {
+        return current;
+      }
+
+      if (executableSources.length > 0) {
+        return String(
+          executableSources[0].contract_id,
+        );
+      }
+
+      return '';
+    });
+  };
+
 
   useEffect(() => {
-    if (overview?.recent_runs) setRuns(overview.recent_runs);
-  }, [overview]);
+    let cancelled = false;
+
+    async function initialLoad() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const [sourceRows, runRows] =
+          await Promise.all([
+            fetchSources(scope),
+            fetchRuns(50, scope),
+          ]);
+
+        if (cancelled) {
+          return;
+        }
+
+        const executableSources = sourceRows.filter(
+          (source) => source.contract_id && matchesSource(source, scope),
+        );
+
+        setSources(executableSources);
+        setRuns(runRows);
+
+        if (executableSources.length > 0) {
+          setSelectedContractId(
+            String(executableSources[0].contract_id),
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    initialLoad();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setError(null);
+
+    try {
+      await loadControlPlane();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+
+  const pollRun = async (externalRunId) => {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      const status = await fetchPipelineRun(
+        externalRunId,
+      );
+
+      setLiveRun(status);
+
+      if (TERMINAL_STATES.has(status.state)) {
+        return status;
+      }
+
+      await sleep(2000);
+    }
+
+    throw new Error(
+      'Pipeline is still running after the UI polling window. '
+        + 'Use Refresh to inspect durable run history.',
+    );
+  };
+
 
   const handleTrigger = async () => {
+    if (!selectedContractId) {
+      setError(
+        'No active persisted contract is available.',
+      );
+      return;
+    }
+
     setTriggering(true);
-    setStatusMessage(null);
+    setError(null);
+    setTriggerResult(null);
+    setLiveRun(null);
+
     try {
-      const res = await triggerPipeline(selectedDataset);
-      if (res.run) {
-        setRuns([res.run, ...runs]);
-        setStatusMessage({
-          type: 'success',
-          text: `Run #${res.run.run_id} completed: ${res.run.accepted_rows.toLocaleString()} accepted rows into Validated Silver, ${res.run.rejected_rows} routed to Quarantine.`,
-        });
+      const accepted = await triggerPipeline({
+        contract_id: Number(selectedContractId),
+
+        // Empty selections mean execute the complete
+        // persisted configuration contract.
+        datasets: [],
+        gold: [],
+        stages: [],
+
+        certification: 'evaluate',
+      });
+
+      setTriggerResult(accepted);
+
+      const finalRun = await pollRun(
+        accepted.external_run_id,
+      );
+
+      await loadControlPlane();
+
+      if (onRefresh) {
+        onRefresh();
+      }
+
+      if (finalRun.state === 'failed') {
+        setError(
+          `Airflow run ${accepted.external_run_id} failed.`,
+        );
       }
     } catch (err) {
-      setStatusMessage({ type: 'error', text: 'Pipeline failed: ' + err.message });
+      setError(err.message);
     } finally {
       setTriggering(false);
     }
   };
 
+
+  const selectedSource = sources.find(
+    (source) =>
+      String(source.contract_id)
+      === selectedContractId,
+  );
+
+
+  if (loading) {
+    return (
+      <div className="card">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+          }}
+        >
+          <Loader2 size={16} className="spin" />
+          Loading orchestration control plane...
+        </div>
+      </div>
+    );
+  }
+
+
   return (
     <div>
-      {/* Pipeline Trigger Action Bar */}
-      <div className="card" style={{ marginBottom: '24px' }}>
-        <h3 className="card-title">Trigger Pipeline Execution</h3>
+      <div
+        className="card"
+        style={{ marginBottom: '24px' }}
+      >
+        <h3 className="card-title">
+          Trigger Persisted Pipeline
+        </h3>
+
         <p className="card-subtitle">
-          Execute generic deterministic processing stages without manual scripts or direct SQL access.
+          Execute the generic DataForge Airflow DAG from a
+          configuration contract persisted in PostgreSQL.
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--muted)', marginBottom: '4px' }}>
-              Target Dataset:
-            </label>
-            <select
-              value={selectedDataset}
-              onChange={(e) => setSelectedDataset(e.target.value)}
-              style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #d1d5db', background: '#fff' }}
-            >
-              <option value="products">products (Olist Pilot)</option>
-              <option value="orders">orders (Olist Pilot)</option>
-              <option value="customers">customers (Olist Pilot)</option>
-              <option value="order_items">order_items (Olist Pilot)</option>
-              <option value="sales_orders">sales_orders (CRM 2nd Source)</option>
-            </select>
-          </div>
 
-          <div>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--muted)', marginBottom: '4px' }}>
-              Pipeline Stage:
-            </label>
-            <select
-              value={targetLayer}
-              onChange={(e) => setTargetLayer(e.target.value)}
-              style={{ padding: '6px 12px', borderRadius: '4px', border: '1px solid #d1d5db', background: '#fff' }}
-            >
-              <option value="silver_quality_gate">Bronze ➡️ Silver (Transform + Quality Gate)</option>
-              <option value="source_to_bronze">Source ➡️ Bronze (Ingestion + Checksum)</option>
-              <option value="gold_aggregation">Validated Silver ➡️ Gold (Curated Analytic Asset)</option>
-            </select>
+        {error && (
+          <div
+            style={{
+              marginBottom: '16px',
+              padding: '10px 12px',
+              borderRadius: '5px',
+              background: 'var(--negative-bg)',
+              color: 'var(--negative)',
+              border:
+                '1px solid var(--negative-border)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '7px',
+              fontSize: '12px',
+            }}
+          >
+            <AlertCircle size={14} />
+            {error}
           </div>
+        )}
 
-          <div style={{ alignSelf: 'flex-end' }}>
-            <button
-              className="btn btn-primary"
-              onClick={handleTrigger}
+
+        <div
+          style={{
+            display: 'flex',
+            gap: '16px',
+            alignItems: 'flex-end',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ minWidth: '330px' }}>
+            <label
+              style={{
+                display: 'block',
+                fontSize: '11px',
+                fontWeight: 600,
+                color: 'var(--muted)',
+                marginBottom: '4px',
+              }}
+            >
+              Active Configuration Contract
+            </label>
+
+            <select
+              value={selectedContractId}
+              onChange={(event) => {
+                setSelectedContractId(
+                  event.target.value,
+                );
+                setTriggerResult(null);
+                setLiveRun(null);
+                setError(null);
+              }}
               disabled={triggering}
+              style={{
+                width: '100%',
+                padding: '7px 10px',
+                borderRadius: '4px',
+                border: '1px solid #d1d5db',
+                background: '#fff',
+              }}
             >
-              {triggering ? <Loader2 size={14} className="spin" /> : <Play size={14} />}
-              <span>{triggering ? 'Executing Pipeline...' : 'Run Pipeline Now'}</span>
-            </button>
+              {sources.length === 0 && (
+                <option value="">
+                  No persisted contracts available
+                </option>
+              )}
+
+              {sources.map((source) => (
+                <option
+                  key={source.source_id}
+                  value={source.contract_id}
+                >
+                  {source.client_code}
+                  {' / '}
+                  {source.project_code}
+                  {' / '}
+                  {sourceCode(source)}
+                  {' '}
+                  ? contract #{source.contract_id}
+                  {' '}
+                  rev {source.contract_revision
+                    || source.revision
+                    || '?'}
+                </option>
+              ))}
+            </select>
           </div>
+
+
+          <button
+            className="btn btn-primary"
+            onClick={handleTrigger}
+            disabled={
+              triggering
+              || !selectedContractId
+            }
+          >
+            {triggering
+              ? (
+                <Loader2
+                  size={14}
+                  className="spin"
+                />
+              )
+              : <Play size={14} />}
+
+            {triggering
+              ? 'Pipeline Running...'
+              : 'Run Full Pipeline'}
+          </button>
+
+
+          <button
+            className="btn btn-secondary"
+            onClick={handleRefresh}
+            disabled={refreshing || triggering}
+          >
+            <RefreshCw
+              size={14}
+              className={
+                refreshing ? 'spin' : undefined
+              }
+            />
+
+            Refresh
+          </button>
         </div>
 
-        {statusMessage && (
+
+        {selectedSource && (
+          <div
+            style={{
+              marginTop: '14px',
+              padding: '10px 12px',
+              background: 'var(--surface-raised)',
+              border:
+                '1px solid var(--border)',
+              borderRadius: '5px',
+              fontSize: '12px',
+            }}
+          >
+            <strong>{sourceName(selectedSource)}</strong>
+
+            <span
+              style={{
+                color: 'var(--muted)',
+                marginLeft: '8px',
+              }}
+            >
+              source={sourceCode(selectedSource)}
+              {' ? '}
+              contract_id=
+              {selectedSource.contract_id}
+              {' ? '}
+              revision=
+              {selectedSource.contract_revision
+                || selectedSource.revision
+                || '?'}
+            </span>
+          </div>
+        )}
+
+
+        {triggerResult && (
           <div
             style={{
               marginTop: '16px',
-              padding: '10px 14px',
-              borderRadius: 'var(--radius-md)',
-              background: statusMessage.type === 'success' ? 'var(--positive-bg)' : 'var(--negative-bg)',
-              border: `1px solid ${statusMessage.type === 'success' ? 'var(--positive-border)' : 'var(--negative-border)'}`,
-              color: statusMessage.type === 'success' ? 'var(--positive)' : 'var(--negative)',
-              fontSize: '13px',
+              padding: '12px 14px',
+              borderRadius: '5px',
+              border: '1px solid var(--border)',
+              background: 'var(--surface-raised)',
+              fontSize: '12px',
             }}
           >
-            {statusMessage.text}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                marginBottom: '8px',
+              }}
+            >
+              <ServerCog size={15} />
+
+              <strong>
+                Airflow execution accepted
+              </strong>
+            </div>
+
+            <div className="mono">
+              DAG: {triggerResult.dag_id}
+            </div>
+
+            <div className="mono">
+              Run: {triggerResult.external_run_id}
+            </div>
+
+            <div>
+              Contract ID: {triggerResult.contract_id}
+            </div>
+
+            <div>
+              Stages:{' '}
+              {(triggerResult.stages || []).join(
+                ' ? ',
+              )}
+            </div>
+
+            <div>
+              Gold targets:{' '}
+              {(triggerResult.gold || []).join(', ')
+                || 'none'}
+            </div>
+
+            <div>
+              Certification mode:{' '}
+              {triggerResult.certification}
+            </div>
+          </div>
+        )}
+
+
+        {liveRun && (
+          <div
+            style={{
+              marginTop: '16px',
+              padding: '12px 14px',
+              borderRadius: '5px',
+              background:
+                liveRun.state === 'success'
+                  ? 'var(--positive-bg)'
+                  : liveRun.state === 'failed'
+                    ? 'var(--negative-bg)'
+                    : 'var(--surface-raised)',
+              border:
+                liveRun.state === 'success'
+                  ? '1px solid var(--positive-border)'
+                  : liveRun.state === 'failed'
+                    ? '1px solid var(--negative-border)'
+                    : '1px solid var(--border)',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '7px',
+                marginBottom: '10px',
+              }}
+            >
+              {statusIcon(liveRun.state)}
+
+              <strong>
+                Live Airflow State:{' '}
+                {liveRun.state.toUpperCase()}
+              </strong>
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns:
+                  'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '8px',
+                fontSize: '12px',
+              }}
+            >
+              {(liveRun.tasks || []).map((task) => (
+                <div
+                  key={
+                    task.task_id
+                    || task.id
+                    || JSON.stringify(task)
+                  }
+                  style={{
+                    padding: '8px',
+                    background: '#fff',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border)',
+                  }}
+                >
+                  <div
+                    className="mono"
+                    style={{ fontWeight: 600 }}
+                  >
+                    {task.task_id
+                      || task.id
+                      || 'task'}
+                  </div>
+
+                  <div
+                    style={{
+                      color: 'var(--muted)',
+                      marginTop: '3px',
+                    }}
+                  >
+                    {task.state || 'unknown'}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
 
-      {/* Execution Run History */}
+
       <div className="card">
-        <h3 className="card-title">Pipeline Execution History</h3>
-        <p className="card-subtitle">
-          Metadata-driven execution logs tracked in PostgreSQL control plane <code>pipeline_run</code> table.
-        </p>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <div>
+            <h3 className="card-title">
+              Durable Orchestration History
+            </h3>
+
+            <p className="card-subtitle">
+              Runs persisted by the DataForge control plane
+              independently of the browser session.
+            </p>
+          </div>
+
+          <span className="badge badge-neutral">
+            {runs.length} runs
+          </span>
+        </div>
+
 
         <div className="table-container">
           <table className="data-table">
             <thead>
               <tr>
-                <th>Run ID</th>
-                <th>Dataset</th>
-                <th>Source Code</th>
-                <th>Stage / Layer</th>
+                <th>Run</th>
+                <th>Client / Project</th>
                 <th>Status</th>
-                <th>Input Rows</th>
-                <th>Accepted (Silver)</th>
-                <th>Quarantined</th>
+                <th>Tasks</th>
+                <th>Success</th>
+                <th>Failed</th>
+                <th>Retries</th>
                 <th>Duration</th>
-                <th>Created At</th>
+                <th>Started</th>
               </tr>
             </thead>
+
             <tbody>
               {runs.map((run) => (
-                <tr key={run.run_id}>
-                  <td className="mono">#{run.run_id}</td>
-                  <td><strong>{run.dataset}</strong></td>
-                  <td className="mono" style={{ fontSize: '12px' }}>{run.source}</td>
-                  <td><span className="badge badge-neutral">{run.layer}</span></td>
+                <tr
+                  key={run.orchestration_run_id}
+                >
                   <td>
-                    <span className="badge badge-positive">
-                      <CheckCircle2 size={11} />
+                    <div className="mono">
+                      #{run.orchestration_run_id}
+                    </div>
+
+                    <div
+                      className="mono"
+                      style={{
+                        fontSize: '10px',
+                        color: 'var(--muted)',
+                      }}
+                    >
+                      {run.external_run_id}
+                    </div>
+                  </td>
+
+                  <td>
+                    <strong>
+                      {run.client_code}
+                    </strong>
+
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: 'var(--muted)',
+                      }}
+                    >
+                      {run.project_code}
+                    </div>
+                  </td>
+
+                  <td>
+                    <span
+                      className={
+                        `badge ${statusClass(run.status)}`
+                      }
+                    >
+                      {statusIcon(run.status)}
                       {run.status}
                     </span>
                   </td>
-                  <td className="tabular-nums">{run.input_rows.toLocaleString()}</td>
-                  <td className="tabular-nums" style={{ color: 'var(--positive)', fontWeight: 600 }}>
-                    {run.accepted_rows.toLocaleString()}
+
+                  <td className="tabular-nums">
+                    {run.task_count}
                   </td>
-                  <td>
-                    {run.rejected_rows > 0 ? (
-                      <span className="badge badge-negative tabular-nums">
-                        <ShieldAlert size={11} />
-                        {run.rejected_rows}
-                      </span>
-                    ) : (
-                      <span style={{ color: 'var(--muted)' }}>0</span>
-                    )}
+
+                  <td
+                    className="tabular-nums"
+                    style={{
+                      color: 'var(--positive)',
+                    }}
+                  >
+                    {run.successful_tasks}
                   </td>
-                  <td className="tabular-nums">{run.duration_sec}s</td>
-                  <td style={{ color: 'var(--muted)', fontSize: '12px' }}>
-                    {new Date(run.created_at).toLocaleString()}
+
+                  <td className="tabular-nums">
+                    {run.failed_tasks}
+                  </td>
+
+                  <td className="tabular-nums">
+                    {run.retried_attempts}
+                  </td>
+
+                  <td className="tabular-nums">
+                    {run.duration_seconds === null
+                      || run.duration_seconds === undefined
+                      ? '?'
+                      : `${Number(
+                        run.duration_seconds,
+                      ).toFixed(2)}s`}
+                  </td>
+
+                  <td
+                    style={{
+                      color: 'var(--muted)',
+                      fontSize: '11px',
+                    }}
+                  >
+                    {new Date(
+                      run.started_at,
+                    ).toLocaleString()}
                   </td>
                 </tr>
               ))}
+
+              {runs.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={9}
+                    style={{
+                      textAlign: 'center',
+                      color: 'var(--muted)',
+                    }}
+                  >
+                    No orchestration runs persisted yet.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
