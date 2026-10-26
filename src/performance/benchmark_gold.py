@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import os
 import statistics
 import tempfile
 import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-import boto3
 import pandas as pd
 import pyarrow.dataset as ds
-from botocore.client import Config
-from dotenv import load_dotenv
+
+from src.common.clients import create_s3_client
+from src.common.settings import load_environment_file
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -30,14 +29,7 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
 
 
 def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name="us-east-1",
-        config=Config(signature_version="s3v4"),
-    )
+    return create_s3_client()
 
 
 def timed(func) -> tuple[float, object]:
@@ -51,7 +43,7 @@ def median_ms(values: list[float]) -> float:
 
 
 def main() -> None:
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment_file()
 
     s3 = minio_client()
     bucket, key = parse_s3_uri(GOLD_URI)

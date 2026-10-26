@@ -15,11 +15,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import boto3
 import pandas as pd
 import psycopg
-from botocore.client import Config
-from dotenv import load_dotenv
+from src.common.clients import connect_postgres, create_s3_client
+from src.common.settings import load_environment_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALPHA_TABLES = ("customers", "orders", "order_items", "products")
@@ -39,24 +38,11 @@ def sha256_file(path: Path) -> str:
 
 
 def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name="us-east-1",
-        config=Config(signature_version="s3v4"),
-    )
+    return create_s3_client()
 
 
 def postgres_connection():
-    return psycopg.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", "5432")),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-    )
+    return connect_postgres()
 
 
 def parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -303,7 +289,7 @@ def transform_table(
 
 
 def run_transformation() -> list[dict[str, Any]]:
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment_file()
     silver_bucket = os.environ.get("MINIO_BUCKET_SILVER", "dataforge-silver")
     s3 = minio_client()
     results: list[dict[str, Any]] = []

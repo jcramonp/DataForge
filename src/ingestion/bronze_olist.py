@@ -15,11 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import boto3
 import pandas as pd
 import psycopg
-from botocore.client import Config
-from dotenv import load_dotenv
+from src.common.clients import connect_postgres, create_s3_client
+from src.common.settings import load_environment_file
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONTRACT = PROJECT_ROOT / "config" / "pilot_olist.json"
@@ -54,24 +53,11 @@ def validate_source_file(path: Path, required_columns: list[str]) -> pd.DataFram
 
 
 def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name="us-east-1",
-        config=Config(signature_version="s3v4"),
-    )
+    return create_s3_client()
 
 
 def postgres_connection():
-    return psycopg.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", "5432")),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-    )
+    return connect_postgres()
 
 
 def ensure_control_plane_records(conn: psycopg.Connection, table_code: str) -> int:
@@ -263,7 +249,7 @@ def ingest_table(
 
 
 def run_ingestion(contract_path: Path = DEFAULT_CONTRACT) -> list[dict[str, Any]]:
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment_file()
     contract = load_contract(contract_path)
     raw_directory = PROJECT_ROOT / contract["raw_directory"]
     bucket = os.environ.get("MINIO_BUCKET_BRONZE", "dataforge-bronze")
