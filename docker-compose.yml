@@ -11,8 +11,9 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
-      - ./database/governance_views.sql:/docker-entrypoint-initdb.d/002_governance_views.sql:ro
+      # First boot only: bootstraps an empty volume. Existing databases are
+      # upgraded with the `migrate` service / `python -m src.ops.migrate`.
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -57,6 +58,66 @@ services:
       mc mb --ignore-existing local/${MINIO_BUCKET_GOLD} &&
       mc ls local
       "
+    networks:
+      - dataforge_net
+
+  # One-shot: applies pending control-plane migrations and records them in
+  # schema_migrations. Safe to re-run: `docker compose run --rm migrate`.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dataforge-api:local
+    container_name: dataforge-migrate
+    command: ["python", "-m", "src.ops.migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+    networks:
+      - dataforge_net
+
+  # Containerized control-plane API (same image as AWS). Opt-in so it does not
+  # clash with `uvicorn --reload` on the host: `docker compose --profile api up -d`.
+  api:
+    image: dataforge-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dataforge-api
+    profiles: ["api"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      DATAFORGE_LOG_LEVEL: ${DATAFORGE_LOG_LEVEL:-INFO}
+      DATAFORGE_LOG_FORMAT: json
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_BRONZE: ${MINIO_BUCKET_BRONZE}
+      MINIO_BUCKET_SILVER: ${MINIO_BUCKET_SILVER}
+      MINIO_BUCKET_QUARANTINE: ${MINIO_BUCKET_QUARANTINE}
+      MINIO_BUCKET_GOLD: ${MINIO_BUCKET_GOLD}
+    ports:
+      - "${API_PORT:-8000}:8000"
     networks:
       - dataforge_net
 
@@ -105,8 +166,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
     environment:
@@ -115,6 +176,8 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      DATAFORGE_LOG_FORMAT: json
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
@@ -146,8 +209,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
     environment:
@@ -156,6 +219,8 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      DATAFORGE_LOG_FORMAT: json
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}

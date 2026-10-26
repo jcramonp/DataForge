@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.vscode
+**/__pycache__
+**/*.pyc
+.env
+.env.*
+!.env.example
+frontend
+data
+docs
+tests
+logs
+reports
+airflow
+*.md
