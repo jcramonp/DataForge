@@ -8,6 +8,7 @@ The PostgreSQL control-plane schema is versioned in `database/migrations/` and a
 | 0002 | `0002_lineage_certification.sql` | Asset lineage, dataset certification and transition history, plus the Draft-on-new-version trigger (#23; formerly `database/migrations/002_lineage_certification.sql`) |
 | 0003 | `0003_governance_views.sql` | Lineage, quality, lineage-edge and certification summary views (formerly `database/governance_views.sql`) |
 | 0004 | `0004_operational_views.sql` | Run status, failure and latest-run views for operations (#32) |
+| 0005 | `0005_orchestration_runs.sql` | Orchestration run and per-attempt task state, linked to `pipeline_run` (#24) |
 
 ## Commands
 
@@ -46,7 +47,7 @@ A unit test rejects non-idempotent `CREATE` statements. CI applies every migrati
 
 ## Adding a migration
 
-1. Create `database/migrations/0005_short_description.sql` (next number, lowercase, underscores).
+1. Create `database/migrations/0006_short_description.sql` (next number, lowercase, underscores).
 2. Write idempotent SQL. Prefer additive changes (new nullable columns, new tables/views) so the previous application version keeps working. This is what makes rollback safe.
 3. Run `python -m src.ops.migrate` locally and `python -m unittest tests.test_ops_migrate`.
 4. Commit the migration together with the code that uses it.

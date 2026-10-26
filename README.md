@@ -103,9 +103,22 @@ npm run dev
 
 ---
 
-### 4. Running Contract-Driven Pipelines (CLI)
+### 4. Running Contract-Driven Pipelines
 
-DataForge executes end-to-end pipelines driven by declarative YAML/JSON contracts (e.g., [`config/examples/olist.yaml`](config/examples/olist.yaml)):
+DataForge executes end-to-end pipelines driven by declarative YAML/JSON contracts (e.g., [`config/examples/olist.yaml`](config/examples/olist.yaml)).
+
+#### Orchestrated pipeline (recommended)
+One generic Airflow DAG, `dataforge_pipeline`, runs any contract: Bronze → profiling → Silver + Quality Gate → Gold → certification. New sources need a contract, not a new DAG ([`docs/operations/orchestration.md`](docs/operations/orchestration.md)).
+```bash
+docker compose up -d                       # Airflow UI: http://localhost:8080 (login: AIRFLOW_ADMIN_* in .env)
+python -m src.orchestration.airflow_client --contract config/examples/olist.yaml --wait
+```
+The same pipeline runs without Airflow:
+```bash
+python -m src.orchestration.pipeline --contract config/examples/olist.yaml
+```
+
+Each stage can also be run on its own:
 
 #### A. Schema Discovery & Profiling
 Analyze source data to discover schemas, candidate keys, nullability, and generate contract drafts:

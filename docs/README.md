@@ -31,6 +31,7 @@ Operations (#32):
 
 - `operations/README.md`: CI pipeline, required checks and delivery flow.
 - `operations/configuration.md`, `operations/migrations.md`, `operations/observability.md`, `operations/runbook.md`.
+- `operations/orchestration.md`: generic Airflow DAG `dataforge_pipeline` (#24).
 
 GitHub tracking:
 
