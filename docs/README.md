@@ -27,6 +27,11 @@ Start here:
 - `sprint-2/aws-deployment.md`: AWS reference deployment strategy.
 - `sprint-2/demo-runbook.md`: living final validation/demo checklist.
 
+Operations (#32):
+
+- `operations/README.md`: CI pipeline, required checks and delivery flow.
+- `operations/configuration.md`, `operations/migrations.md`, `operations/observability.md`, `operations/runbook.md`.
+
 GitHub tracking:
 
 - Parent/Epic: issue `#30` — Sprint 2: Final platform generalization and cloud delivery.

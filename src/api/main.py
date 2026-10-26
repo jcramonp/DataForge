@@ -6,23 +6,70 @@ quarantine inspection, assets, lineage, certification, and LLM configuration cop
 
 from __future__ import annotations
 
-import os
+import logging
+import time
+import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from src.common.clients import connect_postgres
+from src.common.log import configure_logging, run_context
+from src.common.settings import get_settings
 from src.contracts.loader import load_contract
-from src.contracts.models import DataForgeContract, Severity
+from src.contracts.models import DataForgeContract
+from src.ops.health import run_readiness_checks
+from src.ops.run_summary import fetch_run_summary, summarize_status_rows
+
+logger = logging.getLogger("dataforge.api")
+
+API_VERSION = "2.0.0"
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    configure_logging()
+    logger.info("DataForge Control Plane starting", extra={"environment": get_settings().environment})
+    yield
+
 
 app = FastAPI(
     title="DataForge Control Plane API",
     description="Generic data platform lifecycle API for DataForge Sprint 2",
-    version="2.0.0",
+    version=API_VERSION,
+    lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def request_logging(request: Request, call_next):
+    """Attach a request id to every request and log method/path/status/latency."""
+    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    started = time.perf_counter()
+    with run_context(request_id=request_id):
+        try:
+            response = await call_next(request)
+        except Exception:
+            logger.exception("Unhandled API error", extra={"method": request.method, "path": request.url.path})
+            raise
+        duration_ms = round((time.perf_counter() - started) * 1000, 2)
+        logger.info(
+            "%s %s -> %s",
+            request.method,
+            request.url.path,
+            response.status_code,
+            extra={"status_code": response.status_code, "duration_ms": duration_ms},
+        )
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -222,12 +269,79 @@ class CopilotSuggestResponse(BaseModel):
 
 @app.get("/api/health")
 def get_health() -> dict[str, str]:
+    """Liveness: the API process is up. Does not touch dependencies."""
     return {
         "status": "healthy",
         "service": "DataForge Control Plane",
-        "version": "2.0.0",
+        "version": API_VERSION,
+        "environment": get_settings().environment,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+@app.get("/api/ready")
+def get_readiness() -> JSONResponse:
+    """Readiness: configuration, PostgreSQL + migrations, storage buckets, contracts."""
+    results = run_readiness_checks()
+    ready = all(result.ok for result in results)
+    if not ready:
+        logger.warning(
+            "Readiness check failed",
+            extra={"failed_checks": [r.name for r in results if not r.ok]},
+        )
+    return JSONResponse(
+        status_code=status.HTTP_200_OK if ready else status.HTTP_503_SERVICE_UNAVAILABLE,
+        content={
+            "status": "ready" if ready else "not_ready",
+            "checks": [asdict(result) for result in results],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+
+def _mock_run_summary() -> dict[str, Any]:
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for run in MOCK_RUNS:
+        key = (run["layer"], run["status"])
+        row = grouped.setdefault(
+            key,
+            {"run_type": key[0], "status": key[1], "run_count": 0, "input_rows": 0, "accepted_rows": 0, "rejected_rows": 0},
+        )
+        row["run_count"] += 1
+        row["input_rows"] += run["input_rows"]
+        row["accepted_rows"] += run["accepted_rows"]
+        row["rejected_rows"] += run["rejected_rows"]
+    by_stage = list(grouped.values())
+    return {
+        "totals": summarize_status_rows(by_stage),
+        "by_stage": by_stage,
+        "recent_failures": [r for r in MOCK_RUNS if r["status"] == "failed"],
+        "datasets": [],
+    }
+
+
+@app.get("/api/ops/summary")
+def get_operational_summary(recent_failures: int = 10) -> dict[str, Any]:
+    """Operational metrics for runs and failures from the control-plane views.
+
+    Locally, when PostgreSQL is offline, the in-memory demo runs are summarized
+    instead (``source: "mock"``) so the UI keeps working. In test/aws the
+    endpoint fails with 503 rather than hiding a broken control plane.
+    """
+    settings = get_settings()
+    try:
+        with connect_postgres(settings) as conn:
+            summary = fetch_run_summary(conn, recent_failures)
+        return {"source": "database", **summary}
+    except Exception as exc:
+        if settings.environment != "local":
+            logger.exception("Operational summary unavailable")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Control-plane database unavailable: {type(exc).__name__}",
+            ) from exc
+        logger.warning("Control-plane database unavailable; serving mock run summary")
+        return {"source": "mock", **_mock_run_summary()}
 
 
 @app.get("/api/overview")
