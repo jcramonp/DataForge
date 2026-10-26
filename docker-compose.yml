@@ -23,10 +23,16 @@ services:
       - dataforge_net
 
   minio:
-    image: minio/minio:latest
+    # The official minio/minio and minio/mc images were removed from Docker Hub
+    # and quay.io. Chainguard publishes maintained builds of the same MinIO
+    # server/client from source (free tier: `latest` tag only).
+    image: cgr.dev/chainguard/minio:latest
     container_name: dataforge-minio
+    # Root, like the former official image: keeps existing minio_data volumes
+    # readable and lets the server initialize a fresh named volume.
+    user: "0:0"
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -36,7 +42,12 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # The image has bash but no curl/wget: probe the liveness endpoint via /dev/tcp.
+      test: ["CMD-SHELL", 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /minio/health/live HTTP/1.1
+Host: localhost
+Connection: close
+
+" >&3 && read -r status <&3 && [[ $$status == *" 200 "* ]]']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -44,20 +55,20 @@ services:
       - dataforge_net
 
   minio-init:
-    image: minio/mc:latest
+    image: cgr.dev/chainguard/minio-client:latest
     container_name: dataforge-minio-init
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_BRONZE} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_SILVER} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_QUARANTINE} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_GOLD} &&
-      mc ls local
-      "
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    command:
+      - mb
+      - --ignore-existing
+      - local/${MINIO_BUCKET_BRONZE}
+      - local/${MINIO_BUCKET_SILVER}
+      - local/${MINIO_BUCKET_QUARANTINE}
+      - local/${MINIO_BUCKET_GOLD}
     networks:
       - dataforge_net
 

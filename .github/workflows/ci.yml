@@ -79,10 +79,11 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - name: Start MinIO
         # Service containers cannot override the command, so MinIO runs here.
+        # Same image as docker-compose.yml (official minio/minio is no longer published).
         run: |
           docker run -d --name minio -p 59000:9000 \
             -e MINIO_ROOT_USER=dataforge -e MINIO_ROOT_PASSWORD=dataforge_test \
-            minio/minio:latest server /data
+            cgr.dev/chainguard/minio:latest server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:59000/minio/health/live && exit 0
             sleep 2

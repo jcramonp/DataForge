@@ -38,7 +38,7 @@ Integration tests reset the database schema, so they only run with `DATAFORGE_EN
 docker run -d --rm --name dataforge-it-postgres -p 55432:5432 \
   -e POSTGRES_DB=dataforge_test -e POSTGRES_USER=dataforge -e POSTGRES_PASSWORD=dataforge_test postgres:16-alpine
 docker run -d --rm --name dataforge-it-minio -p 59000:9000 \
-  -e MINIO_ROOT_USER=dataforge -e MINIO_ROOT_PASSWORD=dataforge_test minio/minio:latest server /data
+  -e MINIO_ROOT_USER=dataforge -e MINIO_ROOT_PASSWORD=dataforge_test cgr.dev/chainguard/minio:latest server /data
 
 export DATAFORGE_ENV_FILE=config/environments/test.env DATAFORGE_INTEGRATION=1
 python -m unittest discover -s tests/integration -t . -v
@@ -107,6 +107,7 @@ On AWS (#28): enable RDS automated backups and take a manual snapshot before eac
 
 | Symptom | Likely cause | Check / fix |
 |---|---|---|
+| `pull access denied for minio/minio` | The official MinIO images were removed from Docker Hub/quay.io | Pull `cgr.dev/chainguard/minio` and `cgr.dev/chainguard/minio-client` (already used by `docker-compose.yml` and CI); remove old local tags with `docker rmi minio/minio minio/mc` |
 | `/api/ready` 503 on `postgres: pending migrations` | New code deployed without migrating | `python -m src.ops.migrate` |
 | `/api/ready` 503 on `object_storage` | Bucket missing or no permission | `docker compose up minio-init`; on AWS check the task role policy |
 | `Migration ... was modified after being applied` | An applied migration file was edited | Revert the edit; put the change in a new migration |
