@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 from src.connectors import get_dataset_connector
 from src.contracts import load_contract
 from src.contracts.models import DataForgeContract, DatasetConfig
+from src.governance.metadata import dataframe_schema_hash
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -207,23 +208,6 @@ def ensure_control_plane_records(
         return cursor.fetchone()[0]
 
 
-def schema_hash(frame: pd.DataFrame) -> str:
-    schema = [
-        {
-            "name": str(column),
-            "dtype": str(frame[column].dtype),
-        }
-        for column in frame.columns
-    ]
-
-    return hashlib.sha256(
-        json.dumps(
-            schema,
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()
-
-
 def register_dataset_version(
     conn: psycopg.Connection,
     dataset_id: int,
@@ -254,7 +238,7 @@ def register_dataset_version(
             (
                 dataset_id,
                 version_label,
-                schema_hash(frame),
+                dataframe_schema_hash(frame),
                 source_checksum,
             ),
         )

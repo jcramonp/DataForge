@@ -21,6 +21,8 @@ import psycopg
 from botocore.client import Config
 from dotenv import load_dotenv
 
+from src.governance.lineage import register_lineage
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 ALPHA_TABLES = ("customers", "orders", "order_items", "products")
 SILVER_TRANSFORMATION_VERSION = "v1"
@@ -66,22 +68,35 @@ def parse_s3_uri(uri: str) -> tuple[str, str]:
     return parsed.netloc, parsed.path.lstrip("/")
 
 
-def latest_bronze_asset(conn: psycopg.Connection, table_code: str) -> dict[str, Any]:
-    """Return the newest successful Bronze asset for one contracted Olist table."""
+def latest_bronze_asset(
+    conn: psycopg.Connection,
+    table_code: str,
+) -> dict[str, Any]:
+    """Return the newest successful Bronze asset for one Olist table."""
+
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT dv.dataset_version_id,
-                   dv.source_checksum,
-                   da.storage_uri,
-                   da.row_count
+            SELECT
+                da.asset_id,
+                dv.dataset_version_id,
+                dv.source_checksum,
+                da.storage_uri,
+                da.row_count
             FROM client c
-            JOIN project p ON p.client_id = c.client_id
-            JOIN data_source ds ON ds.project_id = p.project_id
-            JOIN dataset d ON d.source_id = ds.source_id
-            JOIN dataset_version dv ON dv.dataset_id = d.dataset_id
-            JOIN pipeline_run pr ON pr.dataset_version_id = dv.dataset_version_id
-            JOIN data_asset da ON da.run_id = pr.run_id
+            JOIN project p
+                ON p.client_id = c.client_id
+            JOIN data_source ds
+                ON ds.project_id = p.project_id
+            JOIN dataset d
+                ON d.source_id = ds.source_id
+            JOIN dataset_version dv
+                ON dv.dataset_id = d.dataset_id
+            JOIN pipeline_run pr
+                ON pr.dataset_version_id =
+                   dv.dataset_version_id
+            JOIN data_asset da
+                ON da.run_id = pr.run_id
             WHERE c.client_code = 'olist'
               AND p.project_code = 'olist-alpha'
               AND ds.source_code = 'olist-csv'
@@ -89,19 +104,28 @@ def latest_bronze_asset(conn: psycopg.Connection, table_code: str) -> dict[str, 
               AND pr.run_type = 'source_to_bronze'
               AND pr.status = 'success'
               AND da.layer = 'bronze'
-            ORDER BY pr.finished_at DESC NULLS LAST, pr.run_id DESC
+            ORDER BY
+                pr.finished_at DESC NULLS LAST,
+                pr.run_id DESC
             LIMIT 1
             """,
             (table_code,),
         )
+
         row = cur.fetchone()
+
     if row is None:
-        raise RuntimeError(f"No successful Bronze asset found for table '{table_code}'")
+        raise RuntimeError(
+            "No successful Bronze asset found "
+            f"for table '{table_code}'"
+        )
+
     return {
-        "dataset_version_id": row[0],
-        "source_checksum": row[1],
-        "storage_uri": row[2],
-        "row_count": row[3],
+        "asset_id": row[0],
+        "dataset_version_id": row[1],
+        "source_checksum": row[2],
+        "storage_uri": row[3],
+        "row_count": row[4],
     }
 
 
@@ -230,15 +254,40 @@ def register_silver_asset(
     storage_uri: str,
     row_count: int,
     checksum: str,
-) -> None:
+) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO data_asset (run_id, layer, asset_name, storage_uri, format, row_count, checksum)
-            VALUES (%s, 'silver', %s, %s, 'parquet', %s, %s)
+            INSERT INTO data_asset (
+                run_id,
+                layer,
+                asset_name,
+                storage_uri,
+                format,
+                row_count,
+                checksum
+            )
+            VALUES (
+                %s,
+                'silver',
+                %s,
+                %s,
+                'parquet',
+                %s,
+                %s
+            )
+            RETURNING asset_id
             """,
-            (run_id, asset_name, storage_uri, row_count, checksum),
+            (
+                run_id,
+                asset_name,
+                storage_uri,
+                row_count,
+                checksum,
+            ),
         )
+
+        return int(cur.fetchone()[0])
 
 
 def transform_table(
@@ -279,7 +328,7 @@ def transform_table(
             silver_checksum = sha256_file(silver_path)
             s3.upload_file(str(silver_path), silver_bucket, silver_key)
 
-        register_silver_asset(
+        silver_asset_id = register_silver_asset(
             conn,
             run_id=run_id,
             asset_name=f"olist_{table_code}_silver",
@@ -287,6 +336,39 @@ def transform_table(
             row_count=len(silver_frame),
             checksum=silver_checksum,
         )
+
+        register_lineage(
+            conn=conn,
+            parent_asset_id=int(
+                bronze["asset_id"]
+            ),
+            child_asset_id=silver_asset_id,
+            relation_type="transformed_from",
+            created_by_run_id=run_id,
+            metadata={
+                "stage": "bronze_to_silver",
+                "dataset": table_code,
+            },
+        )
+
+        finish_pipeline_run(
+            conn,
+            run_id,
+            "success",
+            accepted_rows=len(silver_frame),
+        )
+
+        conn.commit()
+
+        return {
+            "table": table_code,
+            "rows": len(silver_frame),
+            "storage_uri": silver_uri,
+            "run_id": run_id,
+            "asset_id": silver_asset_id,
+        }
+
+
         finish_pipeline_run(conn, run_id, "success", accepted_rows=len(silver_frame))
         conn.commit()
         return {
