@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from src.copilot.service import (
-    SuggestRequest, ApproveRequest, ProviderUnavailable, propose, seal, unseal,
+    SuggestRequest, ApproveRequest, ProviderUnavailable, ProposalRejected, propose, seal, unseal,
 )
 from src.api.control_plane import contract_hash
 
@@ -1699,6 +1699,8 @@ def suggest_rules(payload: SuggestRequest):
         }
     except ProviderUnavailable as exc:
         raise HTTPException(503, str(exc)) from exc
+    except ProposalRejected as exc:
+        raise HTTPException(422, str(exc)) from exc
     except ValueError as exc:
         # Do not echo model text or exception payloads to clients/logs.
         raise HTTPException(422, "Proposal rejected: invalid/unsupported output or context. Refine the requirement and retry.") from exc
