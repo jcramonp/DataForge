@@ -57,6 +57,29 @@ class CopilotTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             propose(self.contract, self.dataset.code, 'required', None, 'llm', self.provider)
 
+    def test_rejection_explains_category_without_echoing_model_values(self):
+        from src.copilot.service import ProposalRejected
+        cases = [
+            ('private model response', 'valid JSON'),
+            (json.dumps({**self.output, 'rules': [{
+                'name': 'test', 'rule': 'less_than_or_equal',
+                'column': self.column, 'severity': 'critical', 'max_value': 8,
+            }]}), 'invalid parameters'),
+            (json.dumps({**self.output, 'rules': [{
+                **self.output['rules'][0], 'rule': 'private_unsupported_operation',
+            }]}), 'unsupported operation'),
+            (json.dumps({**self.output, 'rules': [{
+                **self.output['rules'][0], 'column': 'private_unknown_column',
+            }]}), 'dataset schema'),
+        ]
+        for raw, expected in cases:
+            with self.subTest(expected=expected):
+                self.provider.generate.return_value = raw
+                with self.assertRaises(ProposalRejected) as caught:
+                    propose(self.contract, self.dataset.code, 'required', None, 'llm', self.provider)
+                self.assertIn(expected, str(caught.exception))
+                self.assertNotIn('private_', str(caught.exception))
+
     def test_explicit_fallback_never_calls_provider(self):
         proposal, _ = propose(self.contract, self.dataset.code, 'anything', None, 'deterministic', self.provider)
         self.provider.generate.assert_not_called()
@@ -119,7 +142,10 @@ class CopilotTests(unittest.TestCase):
     def test_invalid_output_api_and_provider_failure_never_silent_fallback(self, generate, connect, active, profile):
         active.return_value = {'contract': self.contract, 'source_id': 1}
         generate.return_value = 'unsafe output'
-        self.assertEqual(self.client.post('/api/copilot/suggest', json=self.payload).status_code, 422)
+        rejected = self.client.post('/api/copilot/suggest', json=self.payload)
+        self.assertEqual(rejected.status_code, 422)
+        self.assertIn('valid JSON', rejected.json()['detail'])
+        self.assertNotIn('unsafe output', rejected.text)
         generate.side_effect = ProviderUnavailable('Bedrock unavailable')
         self.assertEqual(self.client.post('/api/copilot/suggest', json=self.payload).status_code, 503)
         self.payload['mode'] = 'deterministic'

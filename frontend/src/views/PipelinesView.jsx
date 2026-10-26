@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 
 import { matchesSource } from '../services/scope';
+import { isTerminalRun, monitorPipeline } from '../services/pipeline-monitor';
 
 import {
   fetchPipelineRun,
@@ -22,19 +23,6 @@ import {
   fetchSources,
   triggerPipeline,
 } from '../services/api';
-
-
-const TERMINAL_STATES = new Set([
-  'success',
-  'failed',
-]);
-
-
-function sleep(milliseconds) {
-  return new Promise(
-    (resolve) => setTimeout(resolve, milliseconds),
-  );
-}
 
 
 function statusClass(status) {
@@ -101,6 +89,7 @@ export default function PipelinesView({
   const [triggerResult, setTriggerResult] = useState(null);
 
   const [error, setError] = useState(null);
+  const [monitorWarning, setMonitorWarning] = useState('');
 
 
   const loadControlPlane = async () => {
@@ -192,38 +181,31 @@ export default function PipelinesView({
     setError(null);
 
     try {
+      if (triggerResult?.external_run_id) {
+        const status = await fetchPipelineRun(triggerResult.external_run_id);
+        setLiveRun(status);
+        setMonitorWarning(isTerminalRun(status) ? '' : 'Execution is still active. Use Refresh to check its status.');
+      }
       await loadControlPlane();
     } catch (err) {
-      setError(err.message);
+      setError(triggerResult
+        ? `Could not refresh the accepted run. Its outcome is unknown; use Refresh again. ${err.message}`
+        : err.message);
     } finally {
       setRefreshing(false);
     }
   };
 
 
-  const pollRun = async (externalRunId) => {
-    for (let attempt = 0; attempt < 60; attempt += 1) {
-      const status = await fetchPipelineRun(
-        externalRunId,
-      );
-
-      setLiveRun(status);
-
-      if (TERMINAL_STATES.has(status.state)) {
-        return status;
-      }
-
-      await sleep(2000);
-    }
-
-    throw new Error(
-      'Pipeline is still running after the UI polling window. '
-        + 'Use Refresh to inspect durable run history.',
-    );
-  };
+  const pollRun = (externalRunId) => monitorPipeline(externalRunId, {
+    fetchStatus: fetchPipelineRun,
+    onStatus: setLiveRun,
+    onWarning: setMonitorWarning,
+  });
 
 
   const handleTrigger = async () => {
+    if (triggering || (triggerResult && !isTerminalRun(liveRun))) return;
     if (!selectedContractId) {
       setError(
         'No active persisted contract is available.',
@@ -235,7 +217,9 @@ export default function PipelinesView({
     setError(null);
     setTriggerResult(null);
     setLiveRun(null);
+    setMonitorWarning('');
 
+    let acceptedRun;
     try {
       const accepted = await triggerPipeline({
         contract_id: Number(selectedContractId),
@@ -250,6 +234,7 @@ export default function PipelinesView({
       });
 
       setTriggerResult(accepted);
+      acceptedRun = accepted;
 
       const finalRun = await pollRun(
         accepted.external_run_id,
@@ -261,13 +246,15 @@ export default function PipelinesView({
         onRefresh();
       }
 
-      if (finalRun.state === 'failed') {
+      if (finalRun?.state === 'failed') {
         setError(
           `Airflow run ${accepted.external_run_id} failed.`,
         );
       }
     } catch (err) {
-      setError(err.message);
+      setError(acceptedRun
+        ? `Pipeline ${acceptedRun.external_run_id} was accepted. Monitoring or history could not be updated; use Refresh before starting another run. ${err.message}`
+        : err.message);
     } finally {
       setTriggering(false);
     }
@@ -336,6 +323,8 @@ export default function PipelinesView({
           </div>
         )}
 
+        {monitorWarning && <p role="status">{monitorWarning}</p>}
+
 
         <div
           style={{
@@ -367,6 +356,7 @@ export default function PipelinesView({
                 setTriggerResult(null);
                 setLiveRun(null);
                 setError(null);
+                setMonitorWarning('');
               }}
               disabled={triggering}
               style={{
@@ -411,6 +401,7 @@ export default function PipelinesView({
             disabled={
               triggering
               || !selectedContractId
+              || (triggerResult && !isTerminalRun(liveRun))
             }
           >
             {triggering
