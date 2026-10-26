@@ -10,5 +10,6 @@ Implementation of DataForge's data engineering components. Run modules from the 
 - `quality/`: declarative quality rules and Quarantine routing (`quality_generic`).
 - `api/`: FastAPI control plane.
 - `common/`: environment-specific settings, S3/PostgreSQL clients and structured logging shared by every stage.
+- `orchestration/`: metadata-driven orchestration: plan resolution, stage execution with run state, standalone runner and Airflow REST client (DAG in `airflow/dags/dataforge_pipeline.py`).
 - `ops/`: operational tooling: migrations (`migrate`), readiness checks (`health`) and run metrics (`run_summary`).
 - `performance/`: Gold partitioning benchmark.

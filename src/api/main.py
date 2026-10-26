@@ -320,6 +320,7 @@ def _mock_run_summary() -> dict[str, Any]:
         "by_stage": by_stage,
         "recent_failures": [r for r in MOCK_RUNS if r["status"] == "failed"],
         "datasets": [],
+        "orchestrations": [],
     }
 
 

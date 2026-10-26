@@ -1,7 +1,9 @@
-"""Airflow DAG for the Sprint 1 Alpha Olist pipeline.
+"""LEGACY: Airflow DAG for the Sprint 1 Alpha Olist pipeline.
 
-Airflow orchestrates the existing DataForge scripts without duplicating business
-logic. Each task invokes one already-tested stage in sequence.
+Superseded by the generic, contract-driven ``dataforge_pipeline`` DAG (#24),
+which runs Olist through ``config/examples/olist.yaml``. This DAG is kept only
+as the Sprint 1 regression reference: it runs the Olist-specific scripts
+(``*_olist.py``) in sequence. Do not add new datasets here.
 """
 
 from __future__ import annotations
@@ -25,7 +27,7 @@ def run_stage(script_path: str) -> None:
 
 with DAG(
     dag_id="olist_alpha_pipeline",
-    description="DataForge Sprint 1 Alpha: Bronze to validated Silver to Gold",
+    description="LEGACY Sprint 1 Alpha (use dataforge_pipeline): Bronze to validated Silver to Gold",
     start_date=datetime(2026, 8, 1),
     schedule=None,
     catchup=False,
@@ -33,7 +35,7 @@ with DAG(
             "retries": 1,
             "retry_delay": timedelta(minutes=1),
     },
-    tags=["dataforge", "olist", "alpha"],
+    tags=["dataforge", "olist", "alpha", "legacy"],
 ) as dag:
     bronze = PythonOperator(
         task_id="source_to_bronze",

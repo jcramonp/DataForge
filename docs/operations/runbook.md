@@ -16,11 +16,13 @@ python -m src.ops.migrate                    # schema at the latest version
 python -m src.ops.health                     # expect READY
 
 # Olist raw CSVs go in data/raw/olist/ (see data/README.md)
-python -m src.discovery.run_profiling --contract config/examples/olist.yaml
-python -m src.ingestion.bronze_generic --contract config/examples/olist.yaml
-python -m src.transformations.silver_runner --contract config/examples/olist.yaml
-python -m src.transformations.gold_runner --contract config/examples/olist.yaml
+# Whole pipeline (Bronze -> profiling -> Silver + Quality Gate -> Gold -> certification):
+python -m src.orchestration.pipeline --contract config/examples/olist.yaml
 python -m src.ops.run_summary
+
+# Same pipeline through Airflow (UI http://localhost:8080, login from .env):
+docker compose up -d
+python -m src.orchestration.airflow_client --contract config/examples/olist.yaml --wait
 
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000      # terminal 1
 cd frontend && npm ci && npm run dev                     # terminal 2 -> http://localhost:3000
@@ -35,9 +37,9 @@ Verify the build the same way CI does: `ruff check .`, `python -m unittest disco
 Integration tests reset the database schema, so they only run with `DATAFORGE_ENV=test`. Use disposable containers on separate ports so local data is not touched:
 
 ```bash
-docker run -d --rm --name dataforge-it-postgres -p 55432:5432 \
+docker run -d --rm --name dataforge-it-postgres -p 15432:5432 \
   -e POSTGRES_DB=dataforge_test -e POSTGRES_USER=dataforge -e POSTGRES_PASSWORD=dataforge_test postgres:16-alpine
-docker run -d --rm --name dataforge-it-minio -p 59000:9000 \
+docker run -d --rm --name dataforge-it-minio --user 0:0 -p 19000:9000 \
   -e MINIO_ROOT_USER=dataforge -e MINIO_ROOT_PASSWORD=dataforge_test cgr.dev/chainguard/minio:latest server /data
 
 export DATAFORGE_ENV_FILE=config/environments/test.env DATAFORGE_INTEGRATION=1

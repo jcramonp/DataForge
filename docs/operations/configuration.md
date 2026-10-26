@@ -33,7 +33,10 @@ DataForge runs the **same code** in every environment. Environment differences l
 | `MINIO_ROOT_PASSWORD` / `DATAFORGE_STORAGE_SECRET_ACCESS_KEY` | local/test | — | |
 | `AWS_REGION` / `AWS_DEFAULT_REGION` | no | `us-east-1` | |
 | `MINIO_BUCKET_BRONZE`, `_SILVER`, `_QUARANTINE`, `_GOLD` | no | `dataforge-<layer>` | Bucket per layer, on MinIO or S3 |
-| `DATAFORGE_CONNECTION_<REF>` | per source | — | JSON credentials for a contract `connection_reference` (`src/connectors/credentials.py`) |
+| `DATAFORGE_CONNECTION_<REF>` | per source | — | JSON credentials for a contract `connection_reference` (`src/connectors/credentials.py`). Compose loads `.env` into the Airflow services, so declaring it in `.env` makes it available to pipeline tasks |
+| `AIRFLOW_ADMIN_USERNAME` / `AIRFLOW_ADMIN_PASSWORD` | Airflow | `admin` / — | Airflow UI and REST API login (written to the simple auth manager at startup by `airflow/write_auth_file.py`) |
+| `AIRFLOW_API_URL` | trigger client | `http://localhost:8080` | Used by `src.orchestration.airflow_client` to trigger `dataforge_pipeline` |
+| `AIRFLOW_PORT`, `AIRFLOW_JWT_SECRET` | Airflow | `8080` / — | Published UI/API port and JWT signing secret |
 
 The `MINIO_*` names are kept for backwards compatibility with Sprint 1; they configure any S3-compatible store.
 
