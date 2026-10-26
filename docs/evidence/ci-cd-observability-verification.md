@@ -39,11 +39,31 @@ The order follows the dependencies: the governance views reference the #23 table
 - `src/transformations/__init__.py` re-exported the runners. That made `python -m src.transformations.silver_runner` / `gold_runner` execute their module twice (runpy `RuntimeWarning`). The runners are now imported directly.
 - The README referenced `src.ingestion.bronze_runner`, which does not exist. Generic Bronze now has a CLI (`python -m src.ingestion.bronze_generic --contract ...`).
 - The README listed the frontend on `:5173`; Vite serves on `:3000`.
+- **The official `minio/minio` and `minio/mc` images were removed from Docker Hub and quay.io** (`pull access denied`; binary downloads return `410`). A fresh `docker compose up` could not start object storage; the first CI run hit this, while local runs only worked from a cached September 2025 image. Compose and CI now use Chainguard's maintained builds of the same server and client (`cgr.dev/chainguard/minio`, `cgr.dev/chainguard/minio-client`, MinIO `RELEASE.2026-10-23`), with:
+  - root user, as before, so existing volumes stay readable;
+  - a bash `/dev/tcp` liveness probe;
+  - a single shell-less `mc mb` bucket init.
 - Before this change, every stage built MinIO/PostgreSQL clients from hard-coded `MINIO_*` variables and could not target Amazon S3 with an IAM role.
 
 ## Verification
 
-All commands were run locally on 2026-10-25, on Windows 11 with Python 3.13, Node 22 and Docker 28. Integration runs used disposable `postgres:16-alpine` (:55432) and `minio/minio` (:59000) containers.
+### GitHub Actions
+
+Run [40255499617](https://github.com/jcramonp/DataForge/actions/runs/40255499617) on this PR: **all jobs green**.
+
+```text
+success  Lint (ruff)
+success  Unit & regression tests (Python 3.11)   Ran 186 tests, OK (skipped=12)
+success  Unit & regression tests (Python 3.13)   Ran 186 tests, OK (skipped=12)
+success  Integration (PostgreSQL + MinIO)         Applied 4 migration(s) / Applied 0 migration(s); 4 already applied / Ran 12 tests
+success  Frontend build
+success  Compose config & API image
+success  CI status
+```
+
+### Local
+
+All commands below were run locally on 2026-10-25, on Windows 11 with Python 3.13, Node 22 and Docker 28. Integration runs used disposable `postgres:16-alpine` (:55432) and `minio/minio` (:59000) containers.
 
 ### Lint and unit/regression suite
 
@@ -154,6 +174,10 @@ docker inspect -> health: healthy
 {"level": "INFO", "logger": "dataforge.api", "message": "GET /api/ready -> 200", "request_id": "bd5a3fba...", "status_code": 200, "duration_ms": 249.22}
 
 $ docker compose --env-file .env.example config -q        # OK
+
+# Full Compose stack from empty volumes (isolated project): postgres, minio, minio-init, migrate, api
+minio healthy | minio-init: 4 buckets created | migrate: Applied 4 migration(s)
+GET /api/ready -> {"status":"ready", checks: configuration, postgres (schema 0004), object_storage (4 buckets), contracts -> all ok}
 $ cd frontend && npm ci && npm run build                  # built in 5.33s
 ```
 
@@ -161,7 +185,7 @@ $ cd frontend && npm ci && npm run build                  # built in 5.33s
 
 | Criterion | Status | Evidence |
 |---|---|---|
-| Pull requests run automated validation before merge | Met: the workflow runs on every PR to `develop`/`main`. Making it **blocking** requires enabling branch protection with the `CI status` check (admin setting, command in `docs/operations/README.md`) | `.github/workflows/ci.yml`, CI run on this PR |
+| Pull requests run automated validation before merge | Met: the workflow runs on every PR to `develop`/`main` (green run 40255499617 on this PR). Making it **blocking** requires enabling branch protection with the `CI status` check (admin setting, command in `docs/operations/README.md`) | `.github/workflows/ci.yml`, CI run on this PR |
 | A failed pipeline can be traced through logs to a run and dataset | Met | Log + summary output above; `tests/test_pipeline_observability.py`; `FailedPipelineTraceabilityTests` |
 | Local and AWS deployments use the same application code with environment-specific configuration | Met for code/configuration: one image and one code path, only `DATAFORGE_ENV` and variables differ; the `aws` configuration (no endpoint, IAM credential chain, TLS to RDS) is unit-tested. The physical AWS run is delivered in #28 | `src/common/settings.py`, `tests/test_common_settings.py`, `config/environments/aws.env.example` |
 | Database schema changes are reproducible | Met | 4 versioned migrations + runner; Docker bootstrap and runner adoption verified; CI applies them twice on an empty database |
