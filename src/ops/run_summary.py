@@ -1,6 +1,7 @@
 """Operational status summary for pipeline runs and failures.
 
-Reads the views created by ``database/migrations/0004_operational_views.sql``.
+Reads the views created by ``database/migrations/0004_operational_views.sql``
+and ``0005_orchestration_runs.sql``.
 
 Usage::
 
@@ -81,11 +82,19 @@ def fetch_run_summary(conn: psycopg.Connection, recent_failures: int = 10) -> di
             "SELECT * FROM dataset_latest_run ORDER BY client_code, dataset_code, run_type",
         )
     )
+    orchestrations = _clean(
+        _rows(
+            conn,
+            "SELECT * FROM orchestration_run_summary ORDER BY started_at DESC LIMIT %s",
+            (recent_failures,),
+        )
+    )
     return {
         "totals": summarize_status_rows(by_stage),
         "by_stage": by_stage,
         "recent_failures": failures,
         "datasets": datasets,
+        "orchestrations": orchestrations,
     }
 
 
@@ -114,6 +123,15 @@ def main(argv: list[str] | None = None) -> int:
             f"  {row['run_type']:<22} {row['status']:<8} runs={row['run_count']:<5} "
             f"accepted={row['accepted_rows']:<8} rejected={row['rejected_rows']:<6} "
             f"avg={row['avg_duration_seconds']}s"
+        )
+    print("\nRecent orchestration runs:")
+    if not summary["orchestrations"]:
+        print("  none")
+    for row in summary["orchestrations"]:
+        print(
+            f"  #{row['orchestration_run_id']} {row['orchestrator']:<7} {row['client_code']}/{row['project_code']} "
+            f"{row['status']:<7} tasks={row['successful_tasks']}/{row['task_count']} "
+            f"retries={row['retried_attempts']} {row['external_run_id']}"
         )
     print("\nRecent failures:")
     if not summary["recent_failures"]:
