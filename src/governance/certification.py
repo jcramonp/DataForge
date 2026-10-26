@@ -50,9 +50,12 @@ def evaluate_certification(
     - at least one successfully produced non-quarantine asset.
 
     Certification additionally requires:
-    - quality results;
-    - zero failed critical quality rules;
+    - quality evidence from successful upstream quality-gate runs;
     - explicit upstream asset lineage.
+
+    Critical source-rule violations may exist when the violating rows were
+    successfully isolated in Quarantine and are therefore excluded from the
+    validated assets consumed downstream.
     """
 
     with conn.cursor() as cursor:

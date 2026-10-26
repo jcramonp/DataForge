@@ -23,6 +23,7 @@ from src.contracts.loader import load_contract
 from src.contracts.models import DataForgeContract
 from src.quality.quality_generic import evaluate_quality_rules
 from src.transformations.silver_generic import transform_dataset
+from src.governance.lineage import register_lineage
 
 logger = logging.getLogger("src.transformations.silver_runner")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -58,46 +59,71 @@ def postgres_connection():
 def latest_bronze_asset(
     conn: psycopg.Connection,
     client_code: str,
+    project_code: str,
+    source_code: str,
     dataset_code: str,
 ) -> dict[str, Any]:
-    """Retrieve the most recent successful Bronze asset for a dataset."""
+    """Retrieve the latest successful Bronze asset for one exact source dataset."""
+
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT
+                da.asset_id,
                 pr.dataset_version_id,
-                da.checksum,
+                dv.source_checksum,
                 da.storage_uri,
                 da.row_count
             FROM client c
-            JOIN project p ON p.client_id = c.client_id
-            JOIN data_source ds ON ds.project_id = p.project_id
-            JOIN dataset d ON d.source_id = ds.source_id
-            JOIN dataset_version dv ON dv.dataset_id = d.dataset_id
-            JOIN pipeline_run pr ON pr.dataset_version_id = dv.dataset_version_id
-            JOIN data_asset da ON da.run_id = pr.run_id
+            JOIN project p
+                ON p.client_id = c.client_id
+            JOIN data_source ds
+                ON ds.project_id = p.project_id
+            JOIN dataset d
+                ON d.source_id = ds.source_id
+            JOIN dataset_version dv
+                ON dv.dataset_id = d.dataset_id
+            JOIN pipeline_run pr
+                ON pr.dataset_version_id = dv.dataset_version_id
+            JOIN data_asset da
+                ON da.run_id = pr.run_id
             WHERE c.client_code = %s
+              AND p.project_code = %s
+              AND ds.source_code = %s
               AND d.dataset_code = %s
               AND pr.run_type = 'source_to_bronze'
               AND pr.status = 'success'
               AND da.layer = 'bronze'
-            ORDER BY pr.finished_at DESC NULLS LAST, pr.run_id DESC
+            ORDER BY
+                pr.finished_at DESC NULLS LAST,
+                pr.run_id DESC
             LIMIT 1
             """,
-            (client_code, dataset_code),
+            (
+                client_code,
+                project_code,
+                source_code,
+                dataset_code,
+            ),
         )
+
         row = cur.fetchone()
 
     if row is None:
         raise RuntimeError(
-            f"No successful Bronze asset found for dataset '{dataset_code}' (client '{client_code}')"
+            "No successful Bronze asset found for "
+            f"client='{client_code}', "
+            f"project='{project_code}', "
+            f"source='{source_code}', "
+            f"dataset='{dataset_code}'"
         )
 
     return {
-        "dataset_version_id": row[0],
-        "source_checksum": row[1],
-        "storage_uri": row[2],
-        "row_count": row[3],
+        "asset_id": int(row[0]),
+        "dataset_version_id": int(row[1]),
+        "source_checksum": row[2],
+        "storage_uri": row[3],
+        "row_count": int(row[4]),
     }
 
 
@@ -169,7 +195,9 @@ def register_data_asset(
     storage_uri: str,
     row_count: int,
     checksum: str,
-) -> None:
+) -> int:
+    """Register a pipeline output asset and return its identifier."""
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -182,10 +210,35 @@ def register_data_asset(
                 row_count,
                 checksum
             )
-            VALUES (%s, %s, %s, %s, 'parquet', %s, %s)
+            VALUES (
+                %s,
+                %s,
+                %s,
+                %s,
+                'parquet',
+                %s,
+                %s
+            )
+            RETURNING asset_id
             """,
-            (run_id, layer, asset_name, storage_uri, row_count, checksum),
+            (
+                run_id,
+                layer,
+                asset_name,
+                storage_uri,
+                row_count,
+                checksum,
+            ),
         )
+
+        row = cur.fetchone()
+
+    if row is None:
+        raise RuntimeError(
+            f"Data asset '{asset_name}' could not be registered."
+        )
+
+    return int(row[0])
 
 
 def finish_pipeline_run(
@@ -270,7 +323,13 @@ def _execute_silver_pipeline_for_dataset(
     client_code = contract.client.code
     project_code = contract.project.code
 
-    bronze = latest_bronze_asset(conn, client_code, dataset.code)
+    bronze = latest_bronze_asset(
+        conn=conn,
+        client_code=client_code,
+        project_code=project_code,
+        source_code=contract.source.code,
+        dataset_code=dataset.code,
+    )
     bronze_bucket, bronze_key = parse_s3_uri(bronze["storage_uri"])
 
     run_id = start_pipeline_run(
@@ -314,7 +373,7 @@ def _execute_silver_pipeline_for_dataset(
             valid_checksum = sha256_file(valid_path)
             s3.upload_file(str(valid_path), silver_bucket, valid_key)
 
-            register_data_asset(
+            validated_asset_id = register_data_asset(
                 conn,
                 run_id=run_id,
                 layer="silver",
@@ -324,8 +383,23 @@ def _execute_silver_pipeline_for_dataset(
                 checksum=valid_checksum,
             )
 
+            register_lineage(
+                conn=conn,
+                parent_asset_id=bronze["asset_id"],
+                child_asset_id=validated_asset_id,
+                relation_type="validated_from",
+                created_by_run_id=run_id,
+                metadata={
+                    "pipeline_stage": "silver_quality_gate",
+                    "dataset_code": dataset.code,
+                    "transformation_mode": "contract_driven",
+                    "quality_gate_applied": True,
+                },
+            )
+
             # 5. Upload Quarantine if failing critical records exist
             quarantine_uri = None
+            quarantine_asset_id: int | None = None
             if len(quarantine_frame) > 0:
                 quarantine_key = (
                     f"{client_code}/{project_code}/{dataset.code}/"
@@ -336,7 +410,7 @@ def _execute_silver_pipeline_for_dataset(
                 quarantine_checksum = sha256_file(quarantine_path)
                 s3.upload_file(str(quarantine_path), quarantine_bucket, quarantine_key)
 
-                register_data_asset(
+                quarantine_asset_id = register_data_asset(
                     conn,
                     run_id=run_id,
                     layer="quarantine",
@@ -344,6 +418,21 @@ def _execute_silver_pipeline_for_dataset(
                     storage_uri=quarantine_uri,
                     row_count=len(quarantine_frame),
                     checksum=quarantine_checksum,
+                )
+
+                register_lineage(
+                    conn=conn,
+                    parent_asset_id=bronze["asset_id"],
+                    child_asset_id=quarantine_asset_id,
+                    relation_type="quarantined_from",
+                    created_by_run_id=run_id,
+                    metadata={
+                        "pipeline_stage": "silver_quality_gate",
+                        "dataset_code": dataset.code,
+                        "transformation_mode": "contract_driven",
+                        "quality_gate_applied": True,
+                        "critical_violations": True,
+                    },
                 )
 
         # 6. Record quality results & complete pipeline run
@@ -365,6 +454,9 @@ def _execute_silver_pipeline_for_dataset(
             "validated_uri": valid_uri,
             "quarantine_uri": quarantine_uri,
             "run_id": run_id,
+            "bronze_asset_id": bronze["asset_id"],
+            "validated_asset_id": validated_asset_id,
+            "quarantine_asset_id": quarantine_asset_id,
             "quality_results": quality_results,
         }
 
