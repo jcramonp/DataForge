@@ -1,33 +1,33 @@
 """One function per orchestration stage, each delegating to an existing generic runner.
 
-Orchestration adds no pipeline logic: Bronze, Silver + Quality Gate, Gold,
-lineage and certification are executed by the same functions the standalone
-CLIs use. Each stage function processes one target (a dataset or a Gold code)
+Orchestration adds no pipeline logic: Bronze, governed profiling, Silver +
+Quality Gate, Gold, lineage and certification are executed by the same
+functions the standalone CLIs use. Each stage function processes one target (a dataset or a Gold code)
 and returns a small JSON-serializable summary, so it can run inside an
 Airflow task, in the CLI runner, or in tests.
 
 Client construction goes through each runner module's ``minio_client()`` /
-``postgres_connection()`` so behavior (and test patch points) stays identical
-to running the runners directly.
+``postgres_connection()`` (or, for the profiling service, the shared
+``src.common.clients`` it uses itself) so behavior stays identical to running
+the runners directly.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
 import psycopg
 
+from src.common.clients import connect_postgres, create_s3_client
 from src.common.settings import PROJECT_ROOT, get_settings
 from src.contracts.loader import load_contract
 from src.contracts.models import DataForgeContract
-from src.discovery.engine import profile_dataframe
+from src.discovery import service as profiling_service
 from src.governance.certification import (
     evaluate_certification,
     get_certification,
@@ -85,60 +85,35 @@ def run_bronze(plan: PipelinePlan, dataset_code: str) -> dict[str, Any]:
 
 
 def run_profiling(plan: PipelinePlan, dataset_code: str) -> dict[str, Any]:
-    """Profile the latest successful Bronze asset with the existing discovery engine.
+    """Governed profiling of the latest Bronze asset (``discovery.service``, #21).
 
-    Profiling reads what was actually ingested (not the source again) and uses
-    ``profile_dataframe`` unchanged. Results go to the logs and to the task's
-    return value only; nothing is persisted (profiling persistence is owned
-    by #21).
+    The discovery service profiles the exact latest successful Bronze asset
+    (checksum and row count verified), records a ``pipeline_run`` of type
+    ``profiling``, redacts samples of confidential/restricted columns and
+    persists the profile in ``profiling_result``. Only a compact summary is
+    returned here; the full profile stays in ``profiling_result.profile_json``.
     """
 
     with project_working_directory():
-        s3 = silver_runner.minio_client()
-        with silver_runner.postgres_connection() as conn:
-            bronze = silver_runner.latest_bronze_asset(
-                conn,
-                plan.client_code,
-                plan.project_code,
-                plan.source_code,
-                dataset_code,
+        contract = _contract(plan)
+        s3 = create_s3_client()
+        with connect_postgres() as conn:
+            result = profiling_service.execute_profiling_for_dataset(
+                contract=contract,
+                dataset_code=dataset_code,
+                s3=s3,
+                conn=conn,
             )
 
-        bucket, key = silver_runner.parse_s3_uri(bronze["storage_uri"])
-        with tempfile.TemporaryDirectory(prefix="dataforge-profiling-") as tmpdir:
-            local_path = Path(tmpdir) / f"{dataset_code}_bronze.parquet"
-            s3.download_file(bucket, key, str(local_path))
-            frame = pd.read_parquet(local_path, engine="pyarrow")
-
-    profile = profile_dataframe(frame, dataset_name=dataset_code)
-
-    columns = {
-        name: {
-            "inferred_type": column.get("inferred_type"),
-            "null_percentage": column.get("null_percentage"),
-            "distinct_count": column.get("distinct_count"),
-        }
-        for name, column in profile["columns"].items()
+    return {
+        "dataset": result["dataset"],
+        "run_id": result["run_id"],
+        "profile_id": result["profile_id"],
+        "dataset_version_id": result["dataset_version_id"],
+        "source_asset_id": result["source_asset_id"],
+        "row_count": result["row_count"],
+        "column_count": result["column_count"],
     }
-    summary = {
-        "dataset": dataset_code,
-        "bronze_asset_id": bronze["asset_id"],
-        "row_count": profile["row_count"],
-        "column_count": profile["column_count"],
-        "duplicate_rows": profile["duplicate_rows"],
-        "candidate_keys": profile["candidate_keys"],
-        "columns": columns,
-    }
-    logger.info(
-        "Profiled Bronze asset",
-        extra={
-            "row_count": summary["row_count"],
-            "column_count": summary["column_count"],
-            "duplicate_rows": summary["duplicate_rows"],
-            "candidate_keys": summary["candidate_keys"],
-        },
-    )
-    return summary
 
 
 def run_silver(plan: PipelinePlan, dataset_code: str) -> dict[str, Any]:

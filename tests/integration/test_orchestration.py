@@ -99,8 +99,7 @@ class FileSourceOrchestrationTests(unittest.TestCase):
             ],
         )
         linked = {r[0]: r[4] for r in rows}
-        self.assertTrue(linked["bronze"] and linked["silver"] and linked["gold"])
-        self.assertFalse(linked["profiling"])
+        self.assertTrue(linked["bronze"] and linked["profiling"] and linked["silver"] and linked["gold"])
 
     def test_run_is_closed_in_the_control_plane(self):
         row = fetch_all(
@@ -109,13 +108,42 @@ class FileSourceOrchestrationTests(unittest.TestCase):
         )
         self.assertEqual(row, [("cli", "it__retail", "success", 5, 0)])
 
-    def test_profiling_results_are_not_persisted(self):
-        summary = fetch_all(
+    def test_profiling_is_persisted_and_traceable_to_its_bronze_asset(self):
+        # orchestration_task_run -> pipeline_run(profiling) -> profiling_result -> Bronze asset
+        rows = fetch_all(
             self.settings,
-            "SELECT summary_json FROM orchestration_task_run WHERE stage = 'profiling'",
+            """
+            SELECT otr.status, pr.run_type, pr.status, prf.profile_id, prf.source_asset_id,
+                   prf.row_count, prf.column_count, otr.summary_json
+            FROM orchestration_task_run otr
+            JOIN pipeline_run pr ON pr.run_id = otr.pipeline_run_id
+            JOIN profiling_result prf ON prf.run_id = pr.run_id
+            WHERE otr.orchestration_run_id = %s AND otr.stage = 'profiling'
+            """,
+            (self.outcome["orchestration_run_id"],),
         )
-        self.assertEqual(summary, [(None,)])
-        self.assertEqual(self.outcome["results"]["profiling"]["orders"]["row_count"], 7)
+        self.assertEqual(len(rows), 1)
+        task_status, run_type, run_status, profile_id, source_asset_id, row_count, column_count, summary = rows[0]
+        self.assertEqual((task_status, run_type, run_status), ("success", "profiling", "success"))
+        self.assertEqual((row_count, column_count), (7, 5))
+
+        bronze_asset_id = fetch_all(
+            self.settings,
+            """
+            SELECT da.asset_id
+            FROM orchestration_task_run otr
+            JOIN data_asset da ON da.run_id = otr.pipeline_run_id AND da.layer = 'bronze'
+            WHERE otr.orchestration_run_id = %s AND otr.stage = 'bronze'
+            """,
+            (self.outcome["orchestration_run_id"],),
+        )[0][0]
+        self.assertEqual(source_asset_id, bronze_asset_id)
+
+        # Compact summary only; the full profile lives in profiling_result.profile_json.
+        self.assertEqual(summary["profile_id"], profile_id)
+        self.assertEqual(summary["source_asset_id"], bronze_asset_id)
+        self.assertNotIn("profile", summary)
+        self.assertNotIn("columns", summary)
 
     def test_validate_mode_promotes_ready_gold_version(self):
         versions = self.outcome["results"]["certification"]["contract"]["versions"]
@@ -151,6 +179,17 @@ class PostgresSourceOrchestrationTests(unittest.TestCase):
 
     def test_pipeline_succeeds(self):
         self.assertEqual(self.outcome["status"], "success", self.outcome["error"])
+
+    def test_profiling_persisted_for_the_postgres_source(self):
+        profiling = self.outcome["results"]["profiling"]["sales"]
+        self.assertEqual((profiling["row_count"], profiling["column_count"]), (5, 5))
+        rows = fetch_all(
+            self.settings,
+            "SELECT run_type FROM pipeline_run pr JOIN profiling_result prf ON prf.run_id = pr.run_id "
+            "WHERE prf.profile_id = %s",
+            (profiling["profile_id"],),
+        )
+        self.assertEqual(rows, [("profiling",)])
 
     def test_quality_gate_and_gold_results(self):
         silver = self.outcome["results"]["silver"]["sales"]

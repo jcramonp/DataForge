@@ -67,7 +67,8 @@ Key pieces:
   - Flow: `plan.build_plan` validates the request against the contract, then `executor.execute_task` records each attempt in `orchestration_task_run`, then a `stages.run_*` function calls the existing runner.
   - `pipeline.py` runs the same plan without Airflow; `airflow_client.py` triggers it through the REST API.
   - Only transient infrastructure errors are retried (`executor.is_retryable`).
-  - The profiling stage profiles the latest Bronze asset with the unchanged discovery engine and persists nothing; profiling persistence belongs to #21.
+  - The profiling stage delegates to `src.discovery.service.execute_profiling_for_dataset` (#21), which profiles the exact latest Bronze asset and persists `pipeline_run(profiling)` + `profiling_result`. Orchestration stores only a compact summary.
+  - Successful attempts link to their `pipeline_run`; failed attempts keep the attempt number and error only.
   - Certification `validate` mode only promotes `draft → validated`; `certified` is always a human step.
   - Airflow services need `PYTHONPATH=/opt/dataforge` (set in `docker-compose.yml`) and get source credentials via `env_file: .env`.
 - Metadata pattern used by every stage:

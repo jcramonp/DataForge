@@ -12,13 +12,13 @@ src/orchestration/
   plan.py        validate a request against its contract -> PipelinePlan (stages + targets)
   executor.py    run one stage attempt: run-state tracking, log context, retry classification
   stages.py      one function per stage, delegating to the existing generic runners
-  state.py       orchestration_run / orchestration_task_run (migration 0005)
+  state.py       orchestration_run / orchestration_task_run (migration 0006)
   pipeline.py    standalone runner: same plan, without Airflow
   airflow_client.py   trigger/monitor runs through the Airflow REST API
         │
         ▼
 existing generic runners (unchanged)
-  bronze_generic.ingest_dataset · discovery.engine.profile_dataframe ·
+  bronze_generic.ingest_dataset · discovery.service.execute_profiling_for_dataset (#21) ·
   silver_runner.execute_silver_pipeline_for_dataset (Quality Gate, Quarantine, lineage) ·
   gold_runner.execute_gold_pipeline_for_dataset (lineage, certification evaluation) ·
   governance.certification
@@ -27,14 +27,19 @@ existing generic runners (unchanged)
 | Stage | Runs per | Delegates to | Records |
 |---|---|---|---|
 | `bronze` | source dataset | `bronze_generic.ingest_dataset` | `pipeline_run` `source_to_bronze` |
-| `profiling` | source dataset | `discovery.engine.profile_dataframe` on the latest Bronze asset | logs + task return value only (not persisted, see below) |
+| `profiling` | source dataset | `discovery.service.execute_profiling_for_dataset` (#21) | `pipeline_run` `profiling` + `profiling_result` linked to the Bronze asset |
 | `silver` | source dataset | `silver_runner.execute_silver_pipeline_for_dataset` | `pipeline_run` `silver_quality_gate`, quality results, lineage |
 | `gold` | Gold code | `gold_runner.execute_gold_pipeline_for_dataset` | `pipeline_run` `silver_to_gold`, lineage, certification evaluation |
 | `certification` | once | `governance.certification` | `evaluate`: readiness report; `validate`: also `draft → validated` for ready versions |
 
 Notes:
 
-- **Profiling** reads the Bronze Parquet that was actually ingested instead of hitting the source a second time, and uses the discovery engine unchanged. Its output is not stored in the control plane, because profiling persistence belongs to #21.
+- **Profiling** delegates to `src.discovery.service` (#21). The service profiles the exact latest successful Bronze asset, after verifying its checksum and row count, rather than hitting the source a second time. It then:
+  - records a `pipeline_run` of type `profiling`;
+  - redacts samples of confidential/restricted columns;
+  - persists the governed profile in `profiling_result`, linked to the dataset version and to the source Bronze asset.
+
+  The orchestration keeps only a compact summary (`profile_id`, `run_id`, `dataset_version_id`, `source_asset_id`, row/column counts); the full profile lives in `profiling_result.profile_json`.
 - **Certification** never moves a version to `certified`: that remains a human decision.
 
 ### DAG structure
@@ -60,7 +65,7 @@ resolve_plan ─┬─ dataset_targets ─┐
 | Transient infrastructure | PostgreSQL connection lost, MinIO/S3 unreachable, source connection error, timeouts | Retried 2 times, exponential backoff from 20 s up to 5 min |
 | Contract, configuration or data | invalid contract or parameters, missing credentials, missing table/file, no successful Bronze to read | Fails immediately (`AirflowFailException`); retrying cannot fix it |
 
-Every attempt is recorded with its number, so retries are visible in PostgreSQL as well as in Airflow. Classification lives in `executor.is_retryable`.
+Every attempt is recorded with its number, so retries are visible in PostgreSQL as well as in Airflow. Successful attempts are linked to the `pipeline_run` they produced. Failed attempts keep their status, attempt number and full error; the runner records its own failed `pipeline_run`, but that run is not linked to the orchestration attempt. Classification lives in `executor.is_retryable`.
 
 ## Run parameters
 
@@ -122,16 +127,24 @@ No DAG, no code change.
 
 ## Run state in PostgreSQL
 
-Migration `0005_orchestration_runs.sql` adds:
+Migration `0006_orchestration_runs.sql` adds:
 
 | Object | Content |
 |---|---|
 | `orchestration_run` | One row per Airflow DAG run (`external_run_id` = `dag_run_id`) or CLI run: contract, client/project, parameters, `running`/`success`/`failed`, timings, failure reason |
-| `orchestration_task_run` | One row per stage/target **attempt**, linked to the `pipeline_run` it produced; failed attempts keep their error |
+| `orchestration_task_run` | One row per stage/target **attempt**. Successful attempts link to the `pipeline_run` they produced and keep a compact stage summary; failed attempts keep the attempt number and full error |
 | `orchestration_task_latest` (view) | Latest attempt per stage/target |
 | `orchestration_run_summary` (view) | Per-run task counts, failures, retried attempts, duration |
 
 `python -m src.ops.run_summary` and `GET /api/ops/summary` list recent orchestration runs next to stage metrics.
+
+Trace chain for every stage:
+
+```text
+orchestration_run -> orchestration_task_run (stage) -> pipeline_run -> data_asset / quality_result / profiling_result
+```
+
+For profiling, `profiling_result.source_asset_id` is the Bronze asset that was profiled.
 
 ```sql
 -- Which pipeline runs did an Airflow run produce?

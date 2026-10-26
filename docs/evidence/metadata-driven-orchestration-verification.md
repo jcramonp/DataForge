@@ -4,15 +4,23 @@
 
 This evidence verifies **Issue #24: Build metadata-driven Airflow orchestration** for Sprint 2.
 
-The Olist-specific DAG is replaced by one reusable DAG that executes DataForge stages from contract metadata. The orchestration consumes the existing generic runners; the profiling engine and the runners were not modified, and no profiling persistence was added.
+The Olist-specific DAG is replaced by one reusable DAG that executes DataForge stages from contract metadata. The orchestration consumes the existing generic services and does not reimplement any stage:
+
+- Bronze ingestion;
+- governed profiling (`src.discovery.service`, #21);
+- Silver + Quality Gate;
+- Gold;
+- certification.
+
+No runner, discovery or governance code was modified.
 
 ## Delivered capabilities
 
 | Issue deliverable | Implementation |
 |---|---|
-| Generic pipeline entrypoint: ingest → Bronze → profiling → Silver → quality → Gold/certification as configured | `src/orchestration/` (`plan`, `stages`, `executor`); stages selectable per run; certification `evaluate` or `validate` |
+| Generic pipeline entrypoint: ingest → Bronze → profiling → Silver → quality → Gold/certification as configured | `src/orchestration/` (`plan`, `stages`, `executor`); each stage delegates to its generic service (profiling → `discovery.service.execute_profiling_for_dataset`); stages selectable per run; certification `evaluate` or `validate` |
 | Airflow DAG/task structure driven by dataset identifiers and metadata | `airflow/dags/dataforge_pipeline.py`: one DAG parameterized by `contract`, `datasets`, `gold`, `stages`, `certification`; mapped task group per source dataset and mapped Gold tasks, labeled by code (`dataset.bronze[orders]`) |
-| Retry/error handling and run-state integration with PostgreSQL | Transient errors retried (2×, exponential backoff); contract/config/data errors fail fast; migration `0005_orchestration_runs.sql` (`orchestration_run`, `orchestration_task_run` per attempt linked to `pipeline_run`, summary views); `finalize` closes the run and fails the DAG run if any planned task did not succeed |
+| Retry/error handling and run-state integration with PostgreSQL | Transient errors retried (2×, exponential backoff); contract/config/data errors fail fast; migration `0006_orchestration_runs.sql` (`orchestration_run`, `orchestration_task_run` per attempt — successful attempts linked to their `pipeline_run`, failed attempts keep attempt number and full error — plus summary views); `finalize` closes the run and fails the DAG run if any planned task did not succeed |
 | API-triggerable runs with parameters | Airflow 3 REST API with known credentials (`AIRFLOW_ADMIN_*`); `src/orchestration/airflow_client.py` (library + CLI) for the control plane (#25) |
 | Preserve standalone Python/service logic outside Airflow | `python -m src.orchestration.pipeline` runs the same plan/stages/run state without Airflow; the DAG file holds no business logic |
 | Keep Olist working through the generic path | Olist runs through `dataforge_pipeline` with `config/examples/olist.yaml`; results identical to Sprint 1 |
@@ -29,7 +37,13 @@ Supporting changes:
 
 ## Design decisions
 
-- **Profiling reads Bronze, not the source.** The stage profiles the Bronze Parquet that was ingested (`profile_dataframe`, unchanged), so REST/PostgreSQL sources are not extracted twice. Its output goes to logs and the task return value only: `orchestration_task_run.summary_json` stays `NULL` for profiling, because profiling persistence is owned by #21.
+- **Profiling is the governed #21 service.** The stage delegates to `src.discovery.service.execute_profiling_for_dataset`, which:
+  - profiles the exact latest successful Bronze asset (checksum and row count verified), so sources are not extracted twice;
+  - records a `pipeline_run` of type `profiling`;
+  - redacts confidential/restricted samples;
+  - persists `profiling_result`, linked to the dataset version and the source Bronze asset.
+
+  The orchestration task links to that `pipeline_run` and stores only a compact summary; the full profile lives in `profiling_result.profile_json`.
 - **Certification is never automatic past `validated`.** In `validate` mode, versions whose criteria are met move `draft → validated` (`changed_by = dataforge-orchestrator`). `certified` stays a human decision.
 - **Failure isolation per dataset.** A failing dataset stops only its own chain. Gold and certification wait for every dataset.
 - **`max_active_runs=1`.** Runs queue rather than compete for the same control-plane metadata.
@@ -43,6 +57,69 @@ Supporting changes:
 - **Test ports moved to 15432/19000.** Windows/Hyper-V had reserved 58914–59013, which broke the old MinIO test port 59000 locally. The disposable MinIO also runs as `--user 0:0` everywhere: the non-root image cannot initialize `/data`.
 
 ## Verification
+
+The runs in sections 1–6 below were executed before #21 merged, with the earlier inline profiling stage. After merging `develop` (#21), the orchestration was re-verified with the governed profiling service; see **Re-verification after integrating #21**.
+
+## Re-verification after integrating #21
+
+Changes:
+- merged `origin/develop` (#21, PR #47);
+- orchestration migration renumbered to `0006_orchestration_runs.sql` (`0005_profiling_results.sql` untouched);
+- profiling stage now delegates to `src.discovery.service`.
+
+Verification ran on 2026-10-26 against disposable PostgreSQL 16 + MinIO.
+
+### Migrations
+
+```text
+$ python -m src.ops.migrate      -> Applied 6 migration(s); 0 already applied.
+$ python -m src.ops.migrate      -> Applied 0 migration(s); 6 already applied.
+$ python -m src.ops.migrate --status
+applied  0001_control_plane_schema / 0002_lineage_certification / 0003_governance_views
+applied  0004_operational_views / 0005_profiling_results / 0006_orchestration_runs
+```
+
+### Airflow DAG end to end (`airflow dags test`, CI script `.github/scripts/airflow_dag_e2e.sh`)
+
+```text
+DagRun Finished: dag_id=dataforge_pipeline ... state=success
+orchestration_run: ('airflow', 'success', 5, 5, None)
+stage -> pipeline_run: [('bronze', 'source_to_bronze', 'success'), ('profiling', 'profiling', 'success'),
+                        ('silver', 'silver_quality_gate', 'success'), ('gold', 'silver_to_gold', 'success'),
+                        ('certification', None, None)]
+profiling_result: [(1, 7, 5, True)]     # profile_id, row_count, column_count, source_asset_id == Bronze asset of this run
+```
+
+This proves `Source → Bronze → persistent profiling → Silver + Quality Gate → Gold → Certification` inside Airflow, with the trace chain `orchestration_run → orchestration_task_run(profiling) → pipeline_run(profiling) → profiling_result → Bronze asset`.
+
+### Olist (Sprint 1 regression) through the orchestration
+
+| Stage | customers | orders | order_items | products |
+|---|---|---|---|---|
+| Bronze rows | 99441 | 99441 | 112650 | 32951 |
+| Profiling (`profiling_result` rows × columns) | 99441 × 5 | 99441 × 8 | 112650 × 7 | 32951 × 9 |
+| Silver accepted / quarantined | 99441 / 0 | 99441 / 0 | 112650 / 0 | 32947 / 4 |
+
+Gold `order_items_gold`: 112650 → 112642 (8 excluded). Identical to Sprint 1; all 13 data tasks are linked to their `pipeline_run`.
+
+### Automated tests
+
+```text
+$ ruff check .                                   -> All checks passed!
+$ python -m unittest discover -s tests -t .      -> Ran 263 tests, OK (skipped=26: integration + Airflow-only)
+$ DATAFORGE_ENV_FILE=config/environments/test.env DATAFORGE_INTEGRATION=1     python -m unittest discover -s tests/integration -t .   -> Ran 22 tests, OK
+```
+
+Updated/new tests:
+
+| Test | What it checks |
+|---|---|
+| `test_orchestration_stages.ProfilingStageTests` | `run_profiling` delegates to `discovery.service.execute_profiling_for_dataset` and returns the compact summary without the full profile |
+| `test_orchestration_executor` | the profiling attempt is linked to its profiling `pipeline_run`, and the summary is persisted |
+| `integration/test_orchestration` | profiling task is `success`; `pipeline_run.run_type = profiling`; `profiling_result` exists; `source_asset_id` is the run's Bronze asset; row/column counts; same for the PostgreSQL source |
+| `integration/test_migrations_postgres` | `profiling_result` and its views exist next to the orchestration objects |
+
+## Original verification (before #21 was merged)
 
 All runs were executed on 2026-10-26 on Windows 11 (Docker 28, Compose 2.39), against an isolated Compose project (`dfaf`) containing the full stack: PostgreSQL, MinIO, `minio-init`, `migrate`, Airflow 3.3.1 DB/init/api-server/scheduler/dag-processor. Every run was triggered through the **Airflow REST API** with `python -m src.orchestration.airflow_client`.
 
@@ -186,7 +263,7 @@ New tests:
 |---|---|
 | `test_orchestration_plan.py` | Plan resolution and validation |
 | `test_orchestration_executor.py` | Retry classification, run outcome, attempt recording, CLI runner semantics |
-| `test_orchestration_stages.py` | Delegation to each runner; profiling without persistence; certification modes |
+| `test_orchestration_stages.py` | Delegation to each runner (profiling to the #21 service after the merge); certification modes |
 | `test_airflow_client.py` | REST auth, trigger, token renewal, polling |
 | `test_airflow_dag.py` | DAG import, parameters, graph, retry/trigger policy |
 | `integration/test_orchestration.py` | File source, PostgreSQL source and a failing run against real services |
@@ -197,18 +274,17 @@ New tests:
 |---|---|---|
 | A new configured dataset can run without creating a new DAG file named for that client/dataset | Met | Retail CSV, Olist and PostgreSQL sales ran through the same `dataforge_pipeline`; only the `contract` parameter changed |
 | Airflow records success/failure and respects dependencies/retries | Met | Run 4: fail-fast, `upstream_failed` downstream, DAG and `orchestration_run` failed. Run 5: transient storage error retried (try 2) and succeeded. Per-dataset groups, Gold after all datasets, certification after Gold |
-| Olist completes end-to-end through the generic orchestration path | Met | Run 2: 14/14 tasks, results identical to Sprint 1 |
+| Olist completes end-to-end through the generic orchestration path | Met | Run 2: 14/14 tasks, results identical to Sprint 1; re-verified after #21 with persisted profiling for all 4 tables |
 | A second source completes through the same orchestration design | Met | Retail CSV (different schema) and PostgreSQL `sales` (different source type), both end to end including Gold and certification |
 
 ## Regression and compatibility
 
-- The runners, profiling engine, governance and contract code are unchanged. Orchestration only calls their public functions.
+- The runners, the discovery/profiling service (#21), governance and contract code are unchanged. Orchestration only calls their public functions.
 - The legacy `olist_alpha_pipeline` DAG still succeeds and now has a working `PYTHONPATH`.
-- `migrate` adds migration 0005, which is additive and idempotent. Existing databases are upgraded with `python -m src.ops.migrate`.
+- `migrate` adds migration `0006_orchestration_runs.sql` after #21's `0005_profiling_results.sql` (which this PR does not modify). It is additive and idempotent; existing databases are upgraded with `python -m src.ops.migrate`.
 - No secrets were committed. The Airflow login and source credentials come from `.env`; `test.env` holds throwaway CI values only.
 
 ## Follow-ups outside this issue
 
 - **#25:** wire `/api/pipelines/trigger` (and run status) to `src.orchestration.airflow_client` and the `orchestration_run_summary` view.
-- **#21:** if profiling results must be persisted, add that in the discovery module. The orchestration profiling stage already has a single place to call it.
 - **#28:** the same DAG and image run on AWS; provide `AIRFLOW_ADMIN_*` and `DATAFORGE_CONNECTION_*` from Secrets Manager.

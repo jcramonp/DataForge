@@ -2,8 +2,10 @@
 
 The executor wraps every stage/target attempt with:
 
-- an ``orchestration_task_run`` row (running -> success/failed) linked to the
-  stage's ``pipeline_run``;
+- an ``orchestration_task_run`` row per attempt (running -> success/failed).
+  Successful attempts link to the ``pipeline_run`` the stage produced and keep
+  its compact summary; failed attempts keep the attempt number and the full
+  error (the runner records its own failed ``pipeline_run``);
 - structured-log context (``orchestration_run_id``, ``external_run_id``,
   ``attempt``) on top of the runners' own ``stage``/``dataset``/``run_id``;
 - error classification: only transient infrastructure errors are worth a
@@ -129,8 +131,7 @@ def execute_task(
                 task_run_id,
                 "success",
                 pipeline_run_id=summary.get("run_id"),
-                # Profiling output is deliberately not persisted (owned by #21).
-                summary=None if stage == "profiling" else summary,
+                summary=summary,
             )
             conn.commit()
         logger.info("Orchestrated %s[%s] finished", stage, target)

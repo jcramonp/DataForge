@@ -1,11 +1,8 @@
 """Stage functions delegate to the existing generic runners (#24)."""
 
-import tempfile
 import unittest
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pandas as pd
 
 from src.orchestration import stages
 from src.orchestration.plan import build_plan
@@ -94,31 +91,56 @@ class RunnerDelegationTests(unittest.TestCase):
 
 
 class ProfilingStageTests(unittest.TestCase):
-    @patch("src.orchestration.stages.silver_runner")
-    def test_profiles_latest_bronze_asset_with_existing_engine(self, silver):
-        silver.postgres_connection.return_value = _connection()
-        silver.latest_bronze_asset.return_value = {"asset_id": 3, "storage_uri": "s3://dataforge-bronze/orders.parquet"}
-        silver.parse_s3_uri.return_value = ("dataforge-bronze", "orders.parquet")
+    @patch("src.orchestration.stages.create_s3_client")
+    @patch("src.orchestration.stages.connect_postgres")
+    @patch("src.orchestration.stages.profiling_service.execute_profiling_for_dataset")
+    def test_delegates_to_governed_profiling_service(self, execute, connect, s3_factory):
+        conn = _connection()
+        connect.return_value = conn
+        execute.return_value = {
+            "dataset": "orders",
+            "profile_id": 9,
+            "run_id": 14,
+            "dataset_version_id": 2,
+            "source_asset_id": 5,
+            "source_checksum": "a" * 64,
+            "row_count": 7,
+            "column_count": 5,
+            "profile": {"columns": {"order_id": {"sample_values": ["R1"]}}},
+        }
 
-        frame = pd.DataFrame({"order_id": ["R1", "R2", "R3"], "amount": [1.0, None, 3.0]})
+        summary = stages.run_profiling(build_plan(RETAIL), "orders")
 
-        def download(bucket, key, path):
-            frame.to_parquet(path, index=False)
-
-        silver.minio_client.return_value.download_file.side_effect = download
-
-        with tempfile.TemporaryDirectory() as reports:
-            before = set(Path(reports).iterdir())
-            summary = stages.run_profiling(build_plan(RETAIL), "orders")
-            self.assertEqual(set(Path(reports).iterdir()), before)
-
-        silver.latest_bronze_asset.assert_called_once_with(
-            unittest.mock.ANY, "ci-retail", "ci-retail-e2e", "ci-retail-csv", "orders"
+        kwargs = execute.call_args.kwargs
+        self.assertEqual(kwargs["dataset_code"], "orders")
+        self.assertEqual(kwargs["contract"].client.code, "ci-retail")
+        self.assertIs(kwargs["s3"], s3_factory.return_value)
+        self.assertIs(kwargs["conn"], conn)
+        self.assertEqual(
+            summary,
+            {
+                "dataset": "orders",
+                "run_id": 14,
+                "profile_id": 9,
+                "dataset_version_id": 2,
+                "source_asset_id": 5,
+                "row_count": 7,
+                "column_count": 5,
+            },
         )
-        self.assertEqual(summary["row_count"], 3)
-        self.assertEqual(summary["column_count"], 2)
-        self.assertEqual(summary["candidate_keys"], ["order_id"])
-        self.assertEqual(summary["columns"]["amount"]["null_percentage"], 33.33)
+        # The full profile stays in profiling_result, not in the orchestration summary.
+        self.assertNotIn("profile", summary)
+
+    @patch("src.orchestration.stages.create_s3_client")
+    @patch("src.orchestration.stages.connect_postgres")
+    @patch(
+        "src.orchestration.stages.profiling_service.execute_profiling_for_dataset",
+        side_effect=RuntimeError("Bronze asset checksum mismatch"),
+    )
+    def test_profiling_failures_propagate(self, execute, connect, _):
+        connect.return_value = _connection()
+        with self.assertRaises(RuntimeError):
+            stages.run_profiling(build_plan(RETAIL), "orders")
 
 
 class CertificationStageTests(unittest.TestCase):

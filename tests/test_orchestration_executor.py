@@ -87,12 +87,15 @@ class ExecuteTaskTests(unittest.TestCase):
         )
 
     @patch("src.orchestration.executor.state")
-    def test_profiling_summary_is_not_persisted(self, state):
+    def test_profiling_attempt_is_linked_to_its_profiling_run(self, state):
         state.start_task_run.return_value = 8
-        profiling = MagicMock(return_value={"row_count": 7, "columns": {}})
+        summary = {"dataset": "orders", "run_id": 14, "profile_id": 9, "source_asset_id": 5, "row_count": 7, "column_count": 5}
+        profiling = MagicMock(return_value=summary)
         with patch.dict(executor.STAGE_FUNCTIONS, {"profiling": profiling}):
             executor.execute_task(self.plan, 3, "profiling", "orders")
-        self.assertIsNone(state.finish_task_run.call_args.kwargs["summary"])
+        state.finish_task_run.assert_called_once_with(
+            unittest.mock.ANY, 8, "success", pipeline_run_id=14, summary=summary
+        )
 
     @patch("src.orchestration.executor.state")
     def test_certification_runs_once_for_the_plan(self, state):
