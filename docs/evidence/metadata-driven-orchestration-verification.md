@@ -69,6 +69,20 @@ Changes:
 
 Verification ran on 2026-10-26 against disposable PostgreSQL 16 + MinIO.
 
+### GitHub Actions after the merge
+
+Run [40281359302](https://github.com/jcramonp/DataForge/actions/runs/40281359302): **all jobs green**.
+
+```text
+success  Lint (ruff) · Unit & regression (3.11, 3.13) · Frontend build · Compose config & API image
+success  Integration (PostgreSQL + MinIO)   Applied 6 / then 0 migrations; Ran 22 tests
+success  Airflow DAG (end-to-end)           DagRun dataforge_pipeline state=success; orchestration_run ('airflow', 'success', 5, 5)
+                                            stage -> pipeline_run: bronze/source_to_bronze, profiling/profiling,
+                                            silver/silver_quality_gate, gold/silver_to_gold, certification
+                                            profiling_result: (1, 7, 5, same Bronze asset = True)
+success  CI status
+```
+
 ### Migrations
 
 ```text
