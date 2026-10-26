@@ -1,9 +1,8 @@
 """Silver and Gold transformation engines.
 
 The runners (``silver_runner``, ``gold_runner``) are CLI entrypoints and are
-imported directly, not re-exported here. Re-exporting them would cause
-``python -m src.transformations.<runner>`` to preload the module before
-execution.
+imported directly, not re-exported here: importing them from the package would
+make ``python -m src.transformations.<runner>`` execute the module twice.
 """
 
 from src.transformations.gold_generic import (
@@ -43,3 +42,4 @@ __all__ = [
     "execute_gold_step",
     "build_gold_dataset_from_plan",
 ]
+

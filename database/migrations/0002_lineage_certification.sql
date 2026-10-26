@@ -3,8 +3,9 @@
 --
 -- This migration is intentionally additive so existing Sprint 1
 -- metadata, runs, quality results and data assets remain readable.
-
-BEGIN;
+--
+-- No BEGIN/COMMIT here: src/ops/migrate.py runs each migration in its own
+-- transaction (see docs/operations/migrations.md).
 
 
 -- ============================================================
@@ -271,6 +272,3 @@ AFTER INSERT
 ON dataset_version
 FOR EACH ROW
 EXECUTE FUNCTION initialize_dataset_certification();
-
-
-COMMIT;

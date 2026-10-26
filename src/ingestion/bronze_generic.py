@@ -1,26 +1,35 @@
-"""Generic contract-driven source-to-Bronze ingestion for DataForge."""
+"""Generic contract-driven source-to-Bronze ingestion for DataForge.
+
+Usage::
+
+    python -m src.ingestion.bronze_generic --contract config/examples/olist.yaml
+"""
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
+import logging
 import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import boto3
 import pandas as pd
 import psycopg
-from botocore.client import Config
-from dotenv import load_dotenv
 
+from src.common.clients import connect_postgres, create_s3_client
+from src.common.log import bind_context, configure_logging, run_context
+from src.common.settings import load_environment_file
 from src.connectors import get_dataset_connector
 from src.contracts import load_contract
 from src.contracts.models import DataForgeContract, DatasetConfig
 from src.governance.metadata import dataframe_schema_hash
 
+
+logger = logging.getLogger("src.ingestion.bronze_generic")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -72,24 +81,11 @@ def dataframe_checksum(frame: pd.DataFrame) -> str:
 
 
 def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name="us-east-1",
-        config=Config(signature_version="s3v4"),
-    )
+    return create_s3_client()
 
 
 def postgres_connection():
-    return psycopg.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", "5432")),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-    )
+    return connect_postgres()
 
 
 def ensure_control_plane_records(
@@ -377,6 +373,36 @@ def ingest_dataset(
 ) -> dict[str, Any]:
     """Run generic source-to-Bronze ingestion for one dataset."""
 
+    with run_context(
+        stage="source_to_bronze",
+        client=contract.client.code,
+        project=contract.project.code,
+        dataset=dataset_code,
+    ):
+        logger.info("Bronze ingestion started")
+        try:
+            result = _ingest_dataset(
+                contract, dataset_code, s3, conn, bucket, environ=environ
+            )
+        except Exception:
+            logger.exception("Bronze ingestion failed")
+            raise
+        logger.info(
+            "Bronze ingestion finished",
+            extra={"rows": result["rows"], "storage_uri": result["storage_uri"]},
+        )
+        return result
+
+
+def _ingest_dataset(
+    contract: DataForgeContract,
+    dataset_code: str,
+    s3,
+    conn: psycopg.Connection,
+    bucket: str,
+    environ: dict[str, str] | None = None,
+) -> dict[str, Any]:
+
     dataset = next(
         (
             item
@@ -419,6 +445,7 @@ def ingest_dataset(
     )
 
     conn.commit()
+    bind_context(run_id=run_id)
 
     object_key = (
         f"{contract.client.code}/"
@@ -505,7 +532,7 @@ def run_ingestion(
 ) -> list[dict[str, Any]]:
     """Run generic ingestion for every dataset in one contract."""
 
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment_file()
 
     contract = load_contract(
         contract_path
@@ -533,3 +560,29 @@ def run_ingestion(
             )
 
     return results
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run generic source-to-Bronze ingestion"
+    )
+    parser.add_argument(
+        "--contract",
+        type=Path,
+        required=True,
+        help="Path to YAML/JSON contract file",
+    )
+    args = parser.parse_args()
+
+    configure_logging()
+    results = run_ingestion(args.contract)
+    print("Generic Bronze ingestion completed:")
+    for res in results:
+        print(
+            f"- {res['dataset']}: {res['rows']} rows "
+            f"-> {res['storage_uri']} (run_id={res['run_id']})"
+        )
+
+
+if __name__ == "__main__":
+    main()

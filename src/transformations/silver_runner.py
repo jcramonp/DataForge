@@ -13,19 +13,19 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import boto3
-from botocore.config import Config
-from dotenv import load_dotenv
 import pandas as pd
 import psycopg
 
+from src.common.clients import connect_postgres, create_s3_client
+from src.common.log import bind_context, configure_logging, run_context
+from src.common.settings import load_environment_file
 from src.contracts.loader import load_contract
-from src.contracts.models import DataForgeContract, DatasetConfig
+from src.contracts.models import DataForgeContract
 from src.quality.quality_generic import evaluate_quality_rules
 from src.transformations.silver_generic import transform_dataset
 from src.governance.lineage import register_lineage
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("src.transformations.silver_runner")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -49,24 +49,11 @@ def parse_s3_uri(storage_uri: str) -> tuple[str, str]:
 
 
 def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name="us-east-1",
-        config=Config(signature_version="s3v4"),
-    )
+    return create_s3_client()
 
 
 def postgres_connection():
-    return psycopg.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", "5432")),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-    )
+    return connect_postgres()
 
 
 def latest_bronze_asset(
@@ -293,6 +280,42 @@ def execute_silver_pipeline_for_dataset(
     quarantine_bucket: str,
 ) -> dict[str, Any]:
     """Execute Silver transformations and Quality Gate for one dataset."""
+    with run_context(
+        stage="silver_quality_gate",
+        client=contract.client.code,
+        project=contract.project.code,
+        dataset=dataset_code,
+    ):
+        logger.info("Silver + Quality Gate started")
+        try:
+            result = _execute_silver_pipeline_for_dataset(
+                contract, dataset_code, s3, conn, silver_bucket, quarantine_bucket
+            )
+        except Exception:
+            logger.exception("Silver + Quality Gate failed")
+            raise
+
+        failed_rules = [r for r in result["quality_results"] if r["status"] == "fail"]
+        logger.info(
+            "Silver + Quality Gate finished",
+            extra={
+                "input_rows": result["input_rows"],
+                "accepted_rows": result["accepted_rows"],
+                "rejected_rows": result["rejected_rows"],
+                "failed_rules": [r["rule_name"] for r in failed_rules],
+            },
+        )
+        return result
+
+
+def _execute_silver_pipeline_for_dataset(
+    contract: DataForgeContract,
+    dataset_code: str,
+    s3,
+    conn: psycopg.Connection,
+    silver_bucket: str,
+    quarantine_bucket: str,
+) -> dict[str, Any]:
     dataset = next((d for d in contract.datasets if d.code == dataset_code), None)
     if dataset is None:
         raise ValueError(f"Dataset '{dataset_code}' not found in contract")
@@ -315,6 +338,7 @@ def execute_silver_pipeline_for_dataset(
         int(bronze["row_count"]),
     )
     conn.commit()
+    bind_context(run_id=run_id)
 
     source_checksum = bronze["source_checksum"]
     checksum12 = source_checksum[:12]
@@ -450,7 +474,7 @@ def execute_silver_pipeline_for_dataset(
 
 def run_silver_pipeline(contract_path: str | Path) -> list[dict[str, Any]]:
     """Run Silver transformation and Quality Gate for all datasets in a contract."""
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment_file()
     silver_bucket = os.environ.get("MINIO_BUCKET_SILVER", "dataforge-silver")
     quarantine_bucket = os.environ.get("MINIO_BUCKET_QUARANTINE", "dataforge-quarantine")
     s3 = minio_client()
@@ -486,6 +510,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    configure_logging()
     results = run_silver_pipeline(args.contract)
     print("Generic Silver + Quality Gate completed:")
     for res in results:

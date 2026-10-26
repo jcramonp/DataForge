@@ -11,9 +11,9 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/001_schema.sql:ro
-      - ./database/migrations/002_lineage_certification.sql:/docker-entrypoint-initdb.d/002_lineage_certification.sql:ro
-      - ./database/governance_views.sql:/docker-entrypoint-initdb.d/003_governance_views.sql:ro
+      # First boot only: bootstraps an empty volume. Existing databases are
+      # upgraded with the `migrate` service / `python -m src.ops.migrate`.
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -23,10 +23,16 @@ services:
       - dataforge_net
 
   minio:
-    image: minio/minio:latest
+    # The official minio/minio and minio/mc images were removed from Docker Hub
+    # and quay.io. Chainguard publishes maintained builds of the same MinIO
+    # server/client from source (free tier: `latest` tag only).
+    image: cgr.dev/chainguard/minio:latest
     container_name: dataforge-minio
+    # Root, like the former official image: keeps existing minio_data volumes
+    # readable and lets the server initialize a fresh named volume.
+    user: "0:0"
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -36,7 +42,12 @@ services:
     volumes:
       - minio_data:/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      # The image has bash but no curl/wget: probe the liveness endpoint via /dev/tcp.
+      test: ["CMD-SHELL", 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /minio/health/live HTTP/1.1
+Host: localhost
+Connection: close
+
+" >&3 && read -r status <&3 && [[ $$status == *" 200 "* ]]']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -44,20 +55,80 @@ services:
       - dataforge_net
 
   minio-init:
-    image: minio/mc:latest
+    image: cgr.dev/chainguard/minio-client:latest
     container_name: dataforge-minio-init
     depends_on:
       minio:
         condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_BRONZE} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_SILVER} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_QUARANTINE} &&
-      mc mb --ignore-existing local/${MINIO_BUCKET_GOLD} &&
-      mc ls local
-      "
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000
+    command:
+      - mb
+      - --ignore-existing
+      - local/${MINIO_BUCKET_BRONZE}
+      - local/${MINIO_BUCKET_SILVER}
+      - local/${MINIO_BUCKET_QUARANTINE}
+      - local/${MINIO_BUCKET_GOLD}
+    networks:
+      - dataforge_net
+
+  # One-shot: applies pending control-plane migrations and records them in
+  # schema_migrations. Safe to re-run: `docker compose run --rm migrate`.
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dataforge-api:local
+    container_name: dataforge-migrate
+    command: ["python", "-m", "src.ops.migrate"]
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+    networks:
+      - dataforge_net
+
+  # Containerized control-plane API (same image as AWS). Opt-in so it does not
+  # clash with `uvicorn --reload` on the host: `docker compose --profile api up -d`.
+  api:
+    image: dataforge-api:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dataforge-api
+    profiles: ["api"]
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      DATAFORGE_LOG_LEVEL: ${DATAFORGE_LOG_LEVEL:-INFO}
+      DATAFORGE_LOG_FORMAT: json
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET_BRONZE: ${MINIO_BUCKET_BRONZE}
+      MINIO_BUCKET_SILVER: ${MINIO_BUCKET_SILVER}
+      MINIO_BUCKET_QUARANTINE: ${MINIO_BUCKET_QUARANTINE}
+      MINIO_BUCKET_GOLD: ${MINIO_BUCKET_GOLD}
+    ports:
+      - "${API_PORT:-8000}:8000"
     networks:
       - dataforge_net
 
@@ -106,8 +177,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
     environment:
@@ -116,6 +187,8 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      DATAFORGE_LOG_FORMAT: json
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}
@@ -147,8 +220,8 @@ services:
     depends_on:
       airflow-init:
         condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
     environment:
@@ -157,6 +230,8 @@ services:
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
       AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET}
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      DATAFORGE_ENV: ${DATAFORGE_ENV:-local}
+      DATAFORGE_LOG_FORMAT: json
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB}

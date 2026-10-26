@@ -17,12 +17,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-import boto3
-from botocore.config import Config
-from dotenv import load_dotenv
 import pandas as pd
 import psycopg
 
+from src.common.clients import connect_postgres, create_s3_client
+from src.common.log import bind_context, configure_logging, run_context
+from src.common.settings import load_environment_file
 from src.contracts.loader import load_contract
 from src.contracts.models import DataForgeContract, GoldConfig, GoldOperation
 from src.transformations.gold_generic import build_gold_dataset_from_plan
@@ -30,7 +30,7 @@ from src.governance.certification import evaluate_certification
 from src.governance.lineage import register_lineage_edges
 from src.governance.metadata import dataframe_schema_hash
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("src.transformations.gold_runner")
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -54,24 +54,11 @@ def parse_s3_uri(storage_uri: str) -> tuple[str, str]:
 
 
 def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=os.environ["MINIO_ENDPOINT"],
-        aws_access_key_id=os.environ["MINIO_ROOT_USER"],
-        aws_secret_access_key=os.environ["MINIO_ROOT_PASSWORD"],
-        region_name="us-east-1",
-        config=Config(signature_version="s3v4"),
-    )
+    return create_s3_client()
 
 
 def postgres_connection():
-    return psycopg.connect(
-        host=os.environ["POSTGRES_HOST"],
-        port=int(os.environ.get("POSTGRES_PORT", "5432")),
-        dbname=os.environ["POSTGRES_DB"],
-        user=os.environ["POSTGRES_USER"],
-        password=os.environ["POSTGRES_PASSWORD"],
-    )
+    return connect_postgres()
 
 
 def latest_validated_silver_asset(
@@ -373,6 +360,38 @@ def execute_gold_pipeline_for_dataset(
     gold_bucket: str,
 ) -> dict[str, Any]:
     """Execute declarative Gold transformation plan for one Gold dataset."""
+    with run_context(
+        stage="silver_to_gold",
+        client=contract.client.code,
+        project=contract.project.code,
+        dataset=gold_config.code,
+    ):
+        logger.info("Gold transformation started")
+        try:
+            result = _execute_gold_pipeline_for_dataset(
+                contract, gold_config, s3, conn, gold_bucket
+            )
+        except Exception:
+            logger.exception("Gold transformation failed")
+            raise
+        logger.info(
+            "Gold transformation finished",
+            extra={
+                "input_rows": result["input_rows"],
+                "output_rows": result["output_rows"],
+                "storage_uri": result["storage_uri"],
+            },
+        )
+        return result
+
+
+def _execute_gold_pipeline_for_dataset(
+    contract: DataForgeContract,
+    gold_config: GoldConfig,
+    s3,
+    conn: psycopg.Connection,
+    gold_bucket: str,
+) -> dict[str, Any]:
     client_code = contract.client.code
     project_code = contract.project.code
     source_code = contract.source.code
@@ -411,6 +430,7 @@ def execute_gold_pipeline_for_dataset(
     base_rows = sources[gold_config.base_dataset]["row_count"]
     run_id = start_gold_pipeline_run(conn, dataset_version_id, input_rows=base_rows)
     conn.commit()
+    bind_context(run_id=run_id)
 
     try:
         with tempfile.TemporaryDirectory(prefix="dataforge-gold-") as tmpdir:
@@ -524,7 +544,7 @@ def run_gold_pipeline(
     gold_code: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run Gold transformation pipeline for datasets defined in contract."""
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_environment_file()
     gold_bucket = os.environ.get("MINIO_BUCKET_GOLD", "dataforge-gold")
     s3 = minio_client()
 
@@ -572,6 +592,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    configure_logging()
     results = run_gold_pipeline(args.contract, gold_code=args.gold_code)
     print("Generic Gold transformation completed:")
     for res in results:
