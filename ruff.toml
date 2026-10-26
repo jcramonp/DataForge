@@ -1,0 +1,8 @@
+# Lint configuration used by CI (.github/workflows/ci.yml).
+# Pyflakes (F) catches unused imports/variables and undefined names; E9 catches
+# syntax errors. Formatting is not enforced yet.
+target-version = "py311"
+extend-exclude = [".idea", "frontend", "data"]
+
+[lint]
+select = ["E9", "F"]
