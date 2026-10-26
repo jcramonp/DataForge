@@ -7,6 +7,8 @@ quarantine inspection, assets, lineage, certification, and LLM configuration cop
 from __future__ import annotations
 
 import logging
+
+import psycopg
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -26,6 +28,7 @@ from src.common.log import configure_logging, run_context
 from src.common.settings import get_settings
 from src.contracts.loader import load_contract
 from src.contracts.models import DataForgeContract
+from src.discovery.service import get_latest_profile
 from src.ops.health import run_readiness_checks
 from src.ops.run_summary import fetch_run_summary, summarize_status_rows
 
@@ -488,58 +491,70 @@ def get_datasets() -> list[dict[str, Any]]:
 
 
 @app.get("/api/datasets/{dataset_code}/profiling")
-def get_dataset_profiling(dataset_code: str) -> dict[str, Any]:
-    contracts = _get_active_contracts()
-    target_dataset = None
-    for c in contracts:
-        for d in c.datasets:
-            if d.code == dataset_code:
-                target_dataset = d
-                break
+def get_dataset_profiling(
+    dataset_code: str,
+    client_code: str | None = None,
+    project_code: str | None = None,
+    source_code: str | None = None,
+) -> dict[str, Any]:
+    """Return the latest persisted technical profile for a dataset.
 
-    if target_dataset is None:
+    Optional scope parameters disambiguate equal dataset codes belonging to
+    different clients, projects or sources.
+    """
+    try:
+        with connect_postgres() as conn:
+            result = get_latest_profile(
+                conn=conn,
+                dataset_code=dataset_code,
+                client_code=client_code,
+                project_code=project_code,
+                source_code=source_code,
+            )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except psycopg.Error as exc:
+        logger.warning(
+            "Profiling control-plane lookup failed",
+            extra={
+                "dataset": dataset_code,
+                "error_type": type(exc).__name__,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Profiling control plane is unavailable",
+        ) from exc
+
+    if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Dataset '{dataset_code}' not found",
+            detail=(
+                "No persisted profiling result found for "
+                f"dataset '{dataset_code}'"
+            ),
         )
 
-    # Return structured technical discovery profiling
-    columns_profile = {}
-    for col in target_dataset.schema_:
-        is_pk = col.name in target_dataset.keys.primary
-        col_type = col.type.value
-        null_count = 0 if not col.nullable else (160 if col_type in {"date", "datetime"} else 4)
-        columns_profile[col.name] = {
-            "name": col.name,
-            "inferred_type": col_type,
-            "physical_type": "string" if col_type == "string" else ("int64" if col_type == "integer" else "float64"),
-            "total_count": 99441 if dataset_code != "products" else 32951,
-            "null_count": null_count,
-            "null_percentage": round((null_count / (99441 if dataset_code != "products" else 32951) * 100), 3),
-            "distinct_count": 99441 if is_pk else (27 if "state" in col.name else 96096),
-            "uniqueness_ratio": 1.0 if is_pk else 0.966,
-            "sample_values": [f"val_{i}_{col.name[:4]}" for i in range(1, 4)],
-            "stats": {
-                "min": 1 if col_type in {"integer", "float"} else None,
-                "max": 1000 if col_type in {"integer", "float"} else None,
-                "mean": 500.5 if col_type in {"integer", "float"} else None,
-            } if col_type in {"integer", "float"} else {
-                "min_length": 2 if col_type == "string" else None,
-                "max_length": 32 if col_type == "string" else None,
-            },
-        }
+    profile = dict(result["profile"])
 
-    return {
-        "dataset_name": dataset_code,
-        "row_count": 99441 if dataset_code != "products" else 32951,
-        "column_count": len(target_dataset.schema_),
-        "duplicate_rows": 0,
-        "duplicate_rows_percentage": 0.0,
-        "candidate_keys": target_dataset.keys.primary,
-        "memory_bytes": 14205800,
-        "columns": columns_profile,
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+    # Preserve the existing profile response shape consumed by UI/LLM callers,
+    # while exposing traceability metadata alongside the technical metrics.
+    profile["control_plane"] = {
+        "profile_id": result["profile_id"],
+        "client_code": result["client_code"],
+        "project_code": result["project_code"],
+        "source_code": result["source_code"],
+        "dataset_version_id": result["dataset_version_id"],
+        "version_label": result["version_label"],
+        "run_id": result["run_id"],
+        "source_asset_id": result["source_asset_id"],
+        "source_storage_uri": result["source_storage_uri"],
     }
+
+    return profile
 
 
 @app.get("/api/datasets/{dataset_code}/quality-rules")

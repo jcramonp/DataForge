@@ -1,8 +1,8 @@
 """End-to-end regression of the generic contract-driven pipeline (#32).
 
-Runs a non-Olist CSV source through generic Bronze ingestion, the generic
-Silver + Quality Gate and the configurable Gold engine against real
-PostgreSQL and S3-compatible storage, then checks object storage,
+Runs a non-Olist CSV source through generic Bronze ingestion, persistent
+profiling, the generic Silver + Quality Gate and the configurable Gold engine
+against real PostgreSQL and S3-compatible storage, then checks object storage,
 control-plane metadata, certification bootstrap, operational views and
 readiness. A second scenario breaks a run on purpose and verifies it can be
 traced to its run and dataset.
@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from src.common.clients import connect_postgres, create_s3_client
+from src.discovery.service import get_latest_profile, run_profiling_pipeline
 from src.ingestion.bronze_generic import run_ingestion
 from src.ops.health import run_readiness_checks
 from src.ops.migrate import run_migrations
@@ -45,6 +46,7 @@ class GenericPipelineEndToEndTests(unittest.TestCase):
         cls.settings = integration_settings()
         prepare_environment(cls.settings)
         cls.bronze = run_ingestion(CONTRACT)
+        cls.profiling = run_profiling_pipeline(CONTRACT)
         cls.silver = run_silver_pipeline(CONTRACT)
         cls.gold = run_gold_pipeline(CONTRACT)
         cls.s3 = create_s3_client(cls.settings)
@@ -57,6 +59,41 @@ class GenericPipelineEndToEndTests(unittest.TestCase):
         bucket, key = parse_s3_uri(result["storage_uri"])
         self.assertEqual(bucket, self.settings.storage.bucket("bronze"))
         self.s3.head_object(Bucket=bucket, Key=key)
+
+    def test_profiling_persists_bronze_backed_profile(self):
+        self.assertEqual(len(self.profiling), 1)
+
+        result = self.profiling[0]
+
+        self.assertEqual(result["dataset"], "orders")
+        self.assertEqual(result["row_count"], 7)
+        self.assertEqual(result["column_count"], 5)
+        self.assertEqual(result["source_asset_id"], 1)
+
+        with connect_postgres(self.settings) as conn:
+            persisted = get_latest_profile(
+                conn=conn,
+                dataset_code="orders",
+                client_code="ci-retail",
+                project_code="ci-retail-e2e",
+                source_code="ci-retail-csv",
+            )
+
+        self.assertIsNotNone(persisted)
+        self.assertEqual(persisted["profile_id"], result["profile_id"])
+        self.assertEqual(persisted["run_id"], result["run_id"])
+        self.assertEqual(persisted["source_asset_id"], result["source_asset_id"])
+        self.assertEqual(
+            persisted["source_storage_uri"],
+            self.bronze[0]["storage_uri"],
+        )
+        self.assertEqual(persisted["profile"]["dataset_name"], "orders")
+        self.assertEqual(persisted["profile"]["row_count"], 7)
+        self.assertEqual(persisted["profile"]["column_count"], 5)
+        self.assertEqual(
+            len(persisted["profile"]["columns"]),
+            5,
+        )
 
     def test_quality_gate_routes_only_critical_failures_to_quarantine(self):
         result = self.silver[0]
@@ -92,16 +129,27 @@ class GenericPipelineEndToEndTests(unittest.TestCase):
             [(r[0], r[1]) for r in runs],
             [
                 ("source_to_bronze", "success"),
+                ("profiling", "success"),
                 ("silver_quality_gate", "success"),
                 ("silver_to_gold", "success"),
             ],
         )
         self.assertEqual(runs[0][2:], (7, 0))
-        self.assertEqual(runs[1][2:], (4, 3))
+        self.assertEqual(runs[1][2:], (7, 0))
+        self.assertEqual(runs[2][2:], (4, 3))
         layers = {r[0] for r in fetch_all(self.settings, "SELECT layer FROM data_asset")}
         self.assertEqual(layers, {"bronze", "silver", "quarantine", "gold"})
-        quality = fetch_all(self.settings, "SELECT COUNT(*) FROM quality_result")[0][0]
+        quality = fetch_all(
+            self.settings,
+            "SELECT COUNT(*) FROM quality_result",
+        )[0][0]
         self.assertEqual(quality, 5)
+
+        profiles = fetch_all(
+            self.settings,
+            "SELECT COUNT(*) FROM profiling_result",
+        )[0][0]
+        self.assertEqual(profiles, 1)
 
     def test_every_dataset_version_starts_as_draft(self):
         # Trigger from migration 0002 (lineage/certification, #23).
@@ -114,10 +162,14 @@ class GenericPipelineEndToEndTests(unittest.TestCase):
         with connect_postgres(self.settings) as conn:
             summary = fetch_run_summary(conn)
         rejected = fetch_all(self.settings, "SELECT COALESCE(SUM(rejected_rows), 0) FROM pipeline_run")[0][0]
-        self.assertEqual(summary["totals"]["total_runs"], 3)
+        self.assertEqual(summary["totals"]["total_runs"], 4)
         self.assertEqual(summary["totals"]["failed_runs"], 0)
         self.assertEqual(summary["totals"]["rejected_rows"], int(rejected))
-        latest = {(d["dataset_code"], d["run_type"]): d["status"] for d in summary["datasets"]}
+        latest = {
+            (d["dataset_code"], d["run_type"]): d["status"]
+            for d in summary["datasets"]
+        }
+        self.assertEqual(latest[("orders", "profiling")], "success")
         self.assertEqual(latest[("orders", "silver_quality_gate")], "success")
 
     def test_services_report_ready(self):

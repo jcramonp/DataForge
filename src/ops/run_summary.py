@@ -1,7 +1,7 @@
 """Operational status summary for pipeline runs and failures.
 
 Reads the views created by ``database/migrations/0004_operational_views.sql``
-and ``0005_orchestration_runs.sql``.
+and ``0006_orchestration_runs.sql``.
 
 Usage::
 

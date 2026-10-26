@@ -2,11 +2,10 @@
 --
 -- One orchestration_run per pipeline execution (an Airflow DAG run or a
 -- standalone CLI run) and one orchestration_task_run per stage/target attempt.
--- Each stage still records its own pipeline_run; task runs link to it so a
--- DAG run can be traced to the control-plane runs it produced.
---
--- Profiling results are intentionally NOT stored here (summary_json stays
--- NULL for the profiling stage): profiling persistence is owned by #21.
+-- Each stage still records its own pipeline_run (bronze, profiling, silver,
+-- gold); successful task attempts link to it so a DAG run can be traced to the
+-- control-plane runs it produced. summary_json holds a compact stage summary
+-- only: full profiles live in profiling_result (migration 0005, #21).
 
 CREATE TABLE IF NOT EXISTS orchestration_run (
     orchestration_run_id BIGSERIAL PRIMARY KEY,

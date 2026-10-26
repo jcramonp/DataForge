@@ -1,6 +1,7 @@
 """Unit and integration tests for DataForge FastAPI Control Plane."""
 
 import unittest
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 
 from src.api.main import app
@@ -54,13 +55,109 @@ class ControlPlaneApiTests(unittest.TestCase):
         codes = [d["code"] for d in datasets]
         self.assertIn("customers", codes)
 
-    def test_dataset_profiling_endpoint(self):
-        response = self.client.get("/api/datasets/customers/profiling")
+    @patch("src.api.main.get_latest_profile")
+    @patch("src.api.main.connect_postgres")
+    def test_dataset_profiling_endpoint(
+        self,
+        mock_connect_postgres,
+        mock_get_latest_profile,
+    ):
+        conn = MagicMock()
+        mock_connect_postgres.return_value.__enter__.return_value = conn
+
+        mock_get_latest_profile.return_value = {
+            "profile_id": 1,
+            "client_code": "olist",
+            "project_code": "olist-alpha",
+            "source_code": "olist-csv",
+            "dataset_code": "customers",
+            "dataset_version_id": 1,
+            "version_label": "version-1",
+            "run_id": 60,
+            "source_asset_id": 24,
+            "source_storage_uri": "s3://dataforge-bronze/customers.parquet",
+            "row_count": 99441,
+            "column_count": 5,
+            "generated_at": None,
+            "profile": {
+                "dataset_name": "customers",
+                "row_count": 99441,
+                "column_count": 5,
+                "duplicate_rows": 0,
+                "duplicate_rows_percentage": 0.0,
+                "candidate_keys": ["customer_id"],
+                "columns": {
+                    "customer_id": {
+                        "name": "customer_id",
+                        "inferred_type": "string",
+                    }
+                },
+                "generated_at_utc": "2026-10-26T05:00:00+00:00",
+            },
+        }
+
+        response = self.client.get(
+            "/api/datasets/customers/profiling",
+            params={
+                "client_code": "olist",
+                "project_code": "olist-alpha",
+                "source_code": "olist-csv",
+            },
+        )
+
         self.assertEqual(response.status_code, 200)
+
         profile = response.json()
+
         self.assertEqual(profile["dataset_name"], "customers")
-        self.assertIn("columns", profile)
         self.assertIn("customer_id", profile["columns"])
+        self.assertEqual(profile["control_plane"]["profile_id"], 1)
+        self.assertEqual(profile["control_plane"]["run_id"], 60)
+        self.assertEqual(profile["control_plane"]["source_asset_id"], 24)
+
+        mock_get_latest_profile.assert_called_once_with(
+            conn=conn,
+            dataset_code="customers",
+            client_code="olist",
+            project_code="olist-alpha",
+            source_code="olist-csv",
+        )
+
+    @patch("src.api.main.get_latest_profile")
+    @patch("src.api.main.connect_postgres")
+    def test_dataset_profiling_endpoint_returns_404_when_missing(
+        self,
+        mock_connect_postgres,
+        mock_get_latest_profile,
+    ):
+        mock_get_latest_profile.return_value = None
+
+        response = self.client.get(
+            "/api/datasets/missing/profiling"
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("src.api.main.get_latest_profile")
+    @patch("src.api.main.connect_postgres")
+    def test_dataset_profiling_endpoint_rejects_ambiguous_code(
+        self,
+        mock_connect_postgres,
+        mock_get_latest_profile,
+    ):
+        mock_get_latest_profile.side_effect = ValueError(
+            "Ambiguous dataset profiling lookup for dataset='orders'."
+        )
+
+        response = self.client.get(
+            "/api/datasets/orders/profiling"
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn(
+            "Ambiguous dataset profiling lookup",
+            response.json()["detail"],
+        )
 
     def test_quarantine_endpoint(self):
         response = self.client.get("/api/datasets/products/quarantine")

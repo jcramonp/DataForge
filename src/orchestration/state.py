@@ -1,4 +1,4 @@
-"""Persist orchestration run state in the control plane (migration 0005)."""
+"""Persist orchestration run state in the control plane (migration 0006)."""
 
 from __future__ import annotations
 
