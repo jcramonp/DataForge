@@ -1,183 +1,75 @@
-import React, { useState } from 'react';
-import { suggestRulesWithLLM } from '../services/api';
-import { Sparkles, Check, AlertCircle, Plus, Code, Shield } from 'lucide-react';
-
-const SUGGESTION_PRESETS = [
-  'El precio de los items debe ser estrictamente mayor a 0 y no puede tener valores nulos',
-  'El estado del cliente debe cumplir con el formato de código postal o estado de dos letras mayúsculas',
-  'El peso del producto no puede ser cero ni negativo cuando está presente',
-];
+import React, { useEffect, useRef, useState } from 'react';
+import { fetchSources, suggestRulesWithLLM, approveCopilot } from '../services/api';
+import { sourceScope, sourceKey } from '../services/scope';
 
 export default function CopilotView() {
+  const [sources, setSources] = useState([]);
+  const [source, setSource] = useState('');
+  const [dataset, setDataset] = useState('');
   const [requirement, setRequirement] = useState('');
-  const [datasetCode, setDatasetCode] = useState('products');
-  const [loading, setLoading] = useState(false);
-  const [suggestion, setSuggestion] = useState(null);
-  const [applied, setApplied] = useState(false);
-
-  const handleGenerate = async (reqText) => {
-    const query = reqText || requirement;
-    if (!query.trim()) return;
-
-    setLoading(true);
-    setSuggestion(null);
-    setApplied(false);
+  const [mode, setMode] = useState('llm');
+  const [proposal, setProposal] = useState(null);
+  const [reviewed, setReviewed] = useState(false);
+  const [saved, setSaved] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const generation = useRef(0);
+  const selected = sources.find(s => sourceKey(s) === source);
+  const datasets = selected?.datasets || [];
+  useEffect(() => { let active = true;
+    fetchSources().then(rows => { if (active) setSources(rows); })
+      .catch(e => { if (active) setError(e.message); });
+    return () => { active = false; generation.current++; };
+  }, []);
+  function invalidate() {
+    generation.current++; setProposal(null); setReviewed(false); setSaved(null); setError('');
+  }
+  async function generate() {
+    invalidate(); const current = generation.current; setBusy(true);
     try {
-      const res = await suggestRulesWithLLM(
-        datasetCode,
-        query,
-        datasetCode === 'products' ? ['product_weight_g', 'product_id', 'product_category_name'] : ['customer_state', 'customer_id']
-      );
-      setSuggestion(res);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleApply = () => {
-    setApplied(true);
-  };
-
-  return (
-    <div>
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-          <Sparkles size={18} color="#1d5fbf" />
-          <h2 className="card-title" style={{ margin: 0 }}>LLM Configuration Copilot</h2>
-        </div>
-        <p className="card-subtitle">
-          Describe business requirements in natural language. The assistant proposes deterministic, schema-validated rules without executing arbitrary code.
-        </p>
-
-        {/* Preset chips */}
-        <div style={{ marginBottom: '16px' }}>
-          <span style={{ fontSize: '11px', color: 'var(--muted)', fontWeight: 600, display: 'block', marginBottom: '6px' }}>
-            QUICK PRESETS:
-          </span>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            {SUGGESTION_PRESETS.map((p, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => {
-                  setRequirement(p);
-                  handleGenerate(p);
-                }}
-                className="btn btn-secondary btn-sm"
-                style={{ fontSize: '12px' }}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Input Form */}
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-          <div style={{ width: '180px', flexShrink: 0 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--muted)', marginBottom: '4px' }}>
-              Target Dataset:
-            </label>
-            <select
-              value={datasetCode}
-              onChange={(e) => setDatasetCode(e.target.value)}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: '4px', border: '1px solid #d1d5db', background: '#fff' }}
-            >
-              <option value="products">products (Olist)</option>
-              <option value="customers">customers (Olist)</option>
-              <option value="orders">orders (Olist)</option>
-              <option value="sales_orders">sales_orders (CRM)</option>
-            </select>
-          </div>
-
-          <div style={{ flex: 1 }}>
-            <label style={{ display: 'block', fontSize: '11px', fontWeight: 600, color: 'var(--muted)', marginBottom: '4px' }}>
-              Requirement in Natural Language:
-            </label>
-            <textarea
-              rows={2}
-              value={requirement}
-              onChange={(e) => setRequirement(e.target.value)}
-              placeholder="Ej: El peso del producto no puede ser cero ni negativo cuando está presente..."
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                borderRadius: '4px',
-                border: '1px solid #d1d5db',
-                fontFamily: 'var(--font-sans)',
-                fontSize: '13px',
-              }}
-            />
-          </div>
-
-          <div style={{ alignSelf: 'flex-end' }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => handleGenerate()}
-              disabled={loading || !requirement.trim()}
-            >
-              <Sparkles size={14} />
-              <span>{loading ? 'Synthesizing...' : 'Propose Rules'}</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Suggested Configuration Preview */}
-      {suggestion && (
-        <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <div>
-              <h3 className="card-title">Proposed Contract Configuration</h3>
-              <p className="card-subtitle">{suggestion.explanation} (Validation Confidence: {Math.round(suggestion.confidence * 100)}%)</p>
-            </div>
-
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={handleApply}
-              disabled={applied}
-            >
-              {applied ? <Check size={13} /> : <Plus size={13} />}
-              <span>{applied ? 'Added to Quality Gate' : 'Approve & Apply Rule'}</span>
-            </button>
-          </div>
-
-          {applied && (
-            <div
-              style={{
-                marginBottom: '16px',
-                padding: '10px 14px',
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--positive-bg)',
-                border: '1px solid var(--positive-border)',
-                color: 'var(--positive)',
-                fontSize: '13px',
-              }}
-            >
-              Rule successfully validated against Pydantic schema and appended to <code>{datasetCode}</code> Quality Gate.
-            </div>
-          )}
-
-          {/* Code preview block */}
-          <div
-            style={{
-              background: '#0f172a',
-              color: '#f8fafc',
-              padding: '16px',
-              borderRadius: 'var(--radius-md)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '12px',
-              overflowX: 'auto',
-            }}
-          >
-            <pre style={{ margin: 0 }}>
-              {JSON.stringify({ quality: { rules: suggestion.proposed_rules } }, null, 2)}
-            </pre>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+      const result = await suggestRulesWithLLM({...sourceScope(selected), dataset_code: dataset, requirement, mode});
+      if (current === generation.current) setProposal(result);
+    } catch(e) { if (current === generation.current) setError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function approve() {
+    setBusy(true); setError('');
+    try { setSaved(await approveCopilot(proposal.token)); }
+    catch(e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <div className="card">
+    <h2>Configuration Copilot</h2>
+    <p>Review supported transformations and quality rules before saving a contract revision. Execution remains a separate pipeline action.</p>
+    <label>Source <select aria-label="Source" value={source} disabled={busy} onChange={e => {invalidate(); setSource(e.target.value); setDataset('');}}>
+      <option value="">Select a registered source</option>
+      {sources.map(s => <option key={sourceKey(s)} value={sourceKey(s)}>{s.client_code} / {s.project_code} / {s.code}</option>)}
+    </select></label>
+    <label>Dataset <select aria-label="Dataset" value={dataset} disabled={busy} onChange={e => {invalidate(); setDataset(e.target.value);}}>
+      <option value="">Select dataset</option>
+      {datasets.map(d => <option key={d.code} value={d.code}>{d.code}</option>)}
+    </select></label>
+    <label>Provider <select aria-label="Provider" value={mode} disabled={busy} onChange={e => {invalidate(); setMode(e.target.value);}}>
+      <option value="llm">Real LLM — Amazon Bedrock</option>
+      <option value="deterministic">Deterministic fallback — no LLM</option>
+    </select></label>
+    <p>The active schema, existing rules and available profiling summary are included automatically.</p>
+    <textarea aria-label="Requirement" rows={4} style={{width: '100%'}} value={requirement} disabled={busy}
+      placeholder="El peso, cuando está presente, debe ser mayor a cero; severity critical."
+      onChange={e => {invalidate(); setRequirement(e.target.value);}} />
+    <button className="btn btn-primary" disabled={busy || !selected || !dataset || !requirement.trim()} onClick={generate}>
+      {busy ? 'Working…' : 'Generate proposal'}
+    </button>
+    {error && <p role="alert">{error}</p>}
+    {proposal && <section>
+      <h3>Review proposal — {proposal.provider}</h3>
+      <p>{proposal.profile_id ? `Profiling #${proposal.profile_id}` : 'No profiling available; schema context only.'}</p>
+      <p>{proposal.proposal.explanation}</p>
+      <pre style={{overflowX:'auto'}}>{JSON.stringify(proposal.proposal, null, 2)}</pre>
+      <details><summary>Complete validated contract to persist</summary><pre style={{overflowX:'auto'}}>{JSON.stringify(proposal.contract, null, 2)}</pre></details>
+      <label><input type="checkbox" checked={reviewed} disabled={busy || !!saved} onChange={e => setReviewed(e.target.checked)} /> I reviewed this proposal and approve saving this configuration.</label>
+      <button className="btn btn-primary" disabled={!reviewed || busy || !!saved || (!proposal.proposal.rules.length && !proposal.proposal.transformations.length)} onClick={approve}>Approve and save revision</button>
+      {saved && <p role="status">Saved contract #{saved.contract_id}, revision {saved.revision}. Run it separately through the pipeline controls.</p>}
+    </section>}
+  </div>;
 }

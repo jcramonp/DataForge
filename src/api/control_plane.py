@@ -501,6 +501,7 @@ def register_contract(
     contract: DataForgeContract,
     *,
     created_by: str = "api",
+    expected_base_hash: str | None = None,
 ) -> dict[str, Any]:
     """Persist a validated contract and its control-plane identity atomically.
 
@@ -537,6 +538,16 @@ def register_contract(
             conn,
             source_id,
         )
+
+        if expected_base_hash is not None:
+            active = get_active_contract(
+                conn, client_code=contract.client.code,
+                project_code=contract.project.code, source_code=contract.source.code,
+            )
+            if active is None or contract_hash(DataForgeContract.model_validate(active['contract'])) != expected_base_hash:
+                raise ControlPlaneConflictError(
+                    "Active contract changed; regenerate and review a new proposal"
+                )
 
         datasets = _upsert_datasets(
             conn,

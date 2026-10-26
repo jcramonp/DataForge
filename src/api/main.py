@@ -8,6 +8,11 @@ from __future__ import annotations
 
 import logging
 
+from src.copilot.service import (
+    SuggestRequest, ApproveRequest, ProviderUnavailable, propose, seal, unseal,
+)
+from src.api.control_plane import contract_hash
+
 from tempfile import TemporaryDirectory
 import pandas as pd
 import psycopg
@@ -340,19 +345,6 @@ class CertificationUpdateRequest(BaseModel):
     status: Literal["draft", "validated", "certified"]
     certified_by: str = "api"
     notes: str | None = None
-
-
-class CopilotSuggestRequest(BaseModel):
-    dataset_code: str
-    requirement: str
-    context_columns: list[str] = Field(default_factory=list)
-
-
-class CopilotSuggestResponse(BaseModel):
-    proposed_rules: list[dict[str, Any]]
-    explanation: str
-    confidence: float
-    is_valid_contract: bool
 
 
 # --- API Routes ---
@@ -1678,62 +1670,57 @@ def update_certification(
         ) from exc
 
 
+def _copilot_active(conn, client_code, project_code, source_code):
+    active = get_active_contract(conn, client_code=client_code,
+                                 project_code=project_code, source_code=source_code)
+    if active is None:
+        raise HTTPException(404, "No active contract; register it through onboarding first")
+    return active
+
+
 @app.post("/api/copilot/suggest")
-def suggest_rules(payload: CopilotSuggestRequest) -> CopilotSuggestResponse:
-    # Rule suggestion based on schema context without executing arbitrary code
-    req_lower = payload.requirement.lower()
-    proposed = []
+def suggest_rules(payload: SuggestRequest):
+    try:
+        with connect_postgres() as conn:
+            active = _copilot_active(conn, payload.client_code, payload.project_code, payload.source_code)
+            base = DataForgeContract.model_validate(active['contract'])
+            profile = get_latest_profile(conn, payload.dataset_code,
+                client_code=payload.client_code, project_code=payload.project_code,
+                source_code=payload.source_code)
+        proposal, contract = propose(base, payload.dataset_code, payload.requirement,
+                                     profile.get('profile') if profile else None, payload.mode)
+        return {
+            'proposal': proposal.model_dump(mode='json', by_alias=True),
+            'contract': contract.model_dump(mode='json', by_alias=True),
+            'token': seal(contract, base), 'mode': payload.mode,
+            'provider': 'bedrock' if payload.mode == 'llm' else 'deterministic',
+            'profile_id': profile.get('profile_id') if profile else None,
+            'approval_required': True,
+        }
+    except ProviderUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
+    except ValueError as exc:
+        # Do not echo model text or exception payloads to clients/logs.
+        raise HTTPException(422, "Proposal rejected: invalid/unsupported output or context. Refine the requirement and retry.") from exc
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Control-plane database unavailable") from exc
 
-    if "null" in req_lower or "obligatorio" in req_lower or "requerid" in req_lower:
-        col = payload.context_columns[0] if payload.context_columns else "order_id"
-        proposed.append(
-            {
-                "name": f"{col}_not_null",
-                "rule": "not_null",
-                "column": col,
-                "severity": "critical",
-            }
-        )
 
-    if "positiv" in req_lower or "mayor a cero" in req_lower or "precio" in req_lower or "price" in req_lower:
-        col = next((c for c in payload.context_columns if "price" in c or "weight" in c or "value" in c), "price")
-        proposed.append(
-            {
-                "name": f"{col}_strictly_positive",
-                "rule": "greater_than",
-                "column": col,
-                "value": 0,
-                "severity": "critical",
-            }
-        )
-
-    if "estado" in req_lower or "state" in req_lower or "regex" in req_lower:
-        col = next((c for c in payload.context_columns if "state" in c or "code" in c), "customer_state")
-        proposed.append(
-            {
-                "name": f"{col}_iso_format",
-                "rule": "regex",
-                "column": col,
-                "pattern": "^[A-Z]{2}$",
-                "severity": "critical",
-            }
-        )
-
-    if not proposed:
-        col = payload.context_columns[0] if payload.context_columns else "id"
-        proposed.append(
-            {
-                "name": f"{col}_valid_range",
-                "rule": "greater_than_or_equal",
-                "column": col,
-                "value": 0,
-                "severity": "warning",
-            }
-        )
-
-    return CopilotSuggestResponse(
-        proposed_rules=proposed,
-        explanation=f"Generated {len(proposed)} deterministic rule(s) mapped to DataForge QualityRuleConfig schema.",
-        confidence=0.96,
-        is_valid_contract=True,
-    )
+@app.post("/api/copilot/approve")
+def approve_copilot(payload: ApproveRequest):
+    try:
+        contract, base_hash = unseal(payload.token)
+        with connect_postgres() as conn:
+            active = _copilot_active(conn, contract.client.code, contract.project.code, contract.source.code)
+            current = DataForgeContract.model_validate(active['contract'])
+            if contract_hash(current) != base_hash:
+                raise HTTPException(409, "Active contract changed; regenerate and review a new proposal")
+            result = register_contract(conn, contract, created_by="copilot-human-approved",
+                                       expected_base_hash=base_hash)
+        return result
+    except ControlPlaneConflictError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (ValueError, InlineSecretError) as exc:
+        raise HTTPException(422, "Invalid or expired proposal; generate and review again") from exc
+    except psycopg.Error as exc:
+        raise HTTPException(503, "Control-plane database unavailable") from exc

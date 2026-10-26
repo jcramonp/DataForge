@@ -376,17 +376,12 @@ class ControlPlaneApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 409)
         self.assertIn("draft -> certified", response.json()["detail"])
 
-    def test_copilot_suggest_endpoint(self):
-        payload = {
-            "dataset_code": "products",
-            "requirement": "El peso debe ser mayor a cero y no puede ser nulo",
-            "context_columns": ["product_weight_g"],
-        }
-        response = self.client.post("/api/copilot/suggest", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertGreater(len(data["proposed_rules"]), 0)
-        self.assertTrue(data["is_valid_contract"])
+    def test_copilot_requires_registered_source_scope(self):
+        response = self.client.post('/api/copilot/suggest', json={
+            'dataset_code': 'products', 'requirement': 'required',
+            'context_columns': ['invented'],
+        })
+        self.assertEqual(response.status_code, 422)
 
 
 if __name__ == "__main__":

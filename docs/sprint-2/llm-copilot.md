@@ -118,3 +118,24 @@ Contracts/connectors solve technical heterogeneity. The LLM helps users express 
 - Invalid suggestions are rejected safely.
 - A user explicitly reviews the proposal before applying it.
 - The pipeline remains functional when configuration is created manually without the LLM.
+
+## Implementación #26
+
+`src/copilot/service.py` define Protocol Provider, adaptador Bedrock Converse, modelos estrictos,
+validación del contrato completo y tokens firmados de revisión. El LLM propone adiciones de reglas
+(con severity explícita) y transformaciones Silver soportadas; no modifica identidad, schema ni conexiones.
+No se genera ni ejecuta Python/SQL/shell. Outputs inválidos/unsupported se rechazan con 422 y el
+proveedor no disponible devuelve 503. No hay fallback implícito.
+
+`POST /api/copilot/suggest`: client_code, project_code, source_code, dataset_code, requirement,
+mode (llm por defecto o deterministic explícito). Lee contrato activo y profiling desde PostgreSQL.
+Devuelve proposal, contract, token, provider, profile_id y approval_required.
+
+`POST /api/copilot/approve`: token y approved=true. Revalida firma, caducidad, contrato y hash
+base actual; registra una revisión usando el servicio de onboarding, con control de concurrencia
+bajo su bloqueo transaccional por fuente. No dispara pipelines. Conflictos devuelven 409.
+
+La UI muestra reglas/transformaciones/contrato completo, exige revisión explícita, invalida previews
+cuando cambia el contexto y sólo informa guardado tras respuesta exitosa del servidor.
+Variables, preparación y guion: [Demo y verificación](../evidence/copilot-verification.md).
+Adaptador basado en [Boto3 Converse](https://docs.aws.amazon.com/boto3/latest/reference/services/bedrock-runtime/client/converse.html).

@@ -296,23 +296,10 @@ export async function updateCertification(
 
 
 // ---------------------------------------------------------------------
-// Deterministic configuration copilot
-// ---------------------------------------------------------------------
-
-export async function suggestRulesWithLLM(
-  datasetCode,
-  requirement,
-  contextColumns,
-) {
-  return requestJson(
-    '/copilot/suggest',
-    jsonOptions(
-      'POST',
-      {
-        dataset_code: datasetCode,
-        requirement,
-        context_columns: contextColumns,
-      },
-    ),
-  );
+// Validated copilot: generation never persists; approval is a separate request.
+export async function suggestRulesWithLLM(payload) {
+  return requestJson('/copilot/suggest', jsonOptions('POST', payload));
+}
+export async function approveCopilot(token) {
+  return requestJson('/copilot/approve', jsonOptions('POST', {token, approved: true}));
 }
