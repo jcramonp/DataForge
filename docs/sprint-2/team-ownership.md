@@ -1,5 +1,8 @@
 # Sprint 2 Team Ownership Plan
 
+Operational responsibilities are formalized in [RACI](../governance/raci.md).
+The initial plan below is historical planning, not evidence of individual authorship.
+
 ## Principle
 
 Ownership is assigned by feature, not by permanent role silos. The owner coordinates implementation, tests, documentation and PR completion for the issue, but all team members must understand the full platform before final delivery.

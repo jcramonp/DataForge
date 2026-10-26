@@ -1,0 +1,14 @@
+{
+  "verified_at_utc": "2026-10-26T20:03:18.600791+00:00",
+  "database_kind": "live demo control plane",
+  "snapshot_equals_base_aggregation": true,
+  "snapshot_groups": 32,
+  "applied_migration": [
+    "0008",
+    "metadata_performance",
+    "2c593959a86f5393d3ef0e0d1966a0ffd8e11c653f78deb8750919f6f1cc3b93"
+  ],
+  "index_definition": "CREATE INDEX idx_dataset_version_latest ON public.dataset_version USING btree (dataset_id, discovered_at DESC, dataset_version_id DESC)",
+  "cache_populated": true,
+  "pipeline_run_count": 126
+}
