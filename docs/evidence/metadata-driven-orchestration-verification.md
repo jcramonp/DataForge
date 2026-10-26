@@ -156,6 +156,21 @@ DagRun Finished: dag_id=dataforge_pipeline ... state=success
 orchestration_run: ('airflow', 'success', 5, 5, None)
 ```
 
+### GitHub Actions
+
+Run [40275535431](https://github.com/jcramonp/DataForge/actions/runs/40275535431) on PR #46: **all jobs green**.
+
+```text
+success  Lint (ruff)
+success  Unit & regression tests (Python 3.11 / 3.13)
+success  Integration (PostgreSQL + MinIO)   Applied 5 / then 0 migrations; Ran 20 tests
+success  Airflow DAG (end-to-end)           Ran 4 DAG tests; DagRun dataforge_pipeline state=success;
+                                            orchestration_run: ('airflow', 'success', 5, 5, None)
+success  Frontend build
+success  Compose config & API image
+success  CI status
+```
+
 ### Automated tests
 
 ```text
