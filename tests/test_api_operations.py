@@ -59,16 +59,14 @@ class ApiOperationsTests(unittest.TestCase):
         self.assertEqual(data["source"], "database")
         self.assertEqual(data["totals"]["total_runs"], 1)
 
-    def test_ops_summary_falls_back_to_mock_locally(self):
+    def test_ops_summary_fails_loudly_locally(self):
         with (
             patch("src.api.main.get_settings", return_value=get_settings(LOCAL_ENV)),
-            patch("src.api.main.connect_postgres", side_effect=OSError("offline")),
+            patch("src.api.main.connect_postgres", side_effect=OSError("secret-offline")),
         ):
             response = self.client.get("/api/ops/summary")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["source"], "mock")
-        self.assertGreater(data["totals"]["total_runs"], 0)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json()["detail"], "Control-plane database unavailable")
 
     def test_ops_summary_fails_loudly_outside_local(self):
         with (

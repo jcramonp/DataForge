@@ -82,7 +82,8 @@ Key pieces:
 - Database: schema changes go in a **new** `database/migrations/NNNN_name.sql` (4 digits). It must be idempotent (`IF NOT EXISTS`, `CREATE OR REPLACE`) and must not contain `BEGIN`/`COMMIT`, because Docker init and the runner both apply files and the runner owns the transaction. Never edit an applied migration: the checksum check fails. Operational views (`pipeline_run_status_summary`, `pipeline_run_failures`, `dataset_latest_run`, `orchestration_run_summary`) back `src/ops/run_summary.py`.
 - Local Docker on Windows: Hyper-V reserves blocks of ports ≥ 49152, so test ports stay below that (15432/19000). In Git Bash, prefix `docker run` that passes Linux paths with `MSYS_NO_PATHCONV=1`.
 - `src/api/main.py`: FastAPI control plane.
-  - Most UI endpoints serve **in-memory mock state** (`MOCK_RUNS`, …); `/api/pipelines/trigger` and `/api/copilot/suggest` are not wired to real runners or an LLM yet. #25 should wire the trigger to `src.orchestration.airflow_client`.
+  - Onboarding persists executable contract revisions in PostgreSQL. Metadata, overview, runs, quality, assets, lineage and certification are database-backed; unavailable services return errors rather than demo data. `/api/pipelines/trigger` uses `src.orchestration.airflow_client` with an immutable `contract_id`.
+  - `/api/copilot/suggest` remains a deterministic suggestion preview; real LLM integration is tracked separately from #25.
   - `/api/ready` and `/api/ops/summary` are real.
   - Request-ID middleware logs every request.
 - `frontend/`: React 18 + Vite, plain CSS. All HTTP calls go through `src/services/api.js` (base `/api`).

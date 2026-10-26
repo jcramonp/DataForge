@@ -67,6 +67,36 @@ class AirflowClientTests(unittest.TestCase):
         conf = build_conf("c.yaml")
         self.assertEqual(conf, {"contract": "c.yaml", "datasets": [], "gold": [], "stages": list(STAGES), "certification": "evaluate"})
 
+    def test_persisted_contract_conf(self):
+        conf = build_conf(
+            contract_id=17,
+            datasets=["orders"],
+        )
+
+        self.assertEqual(
+            conf,
+            {
+                "contract_id": 17,
+                "datasets": ["orders"],
+                "gold": [],
+                "stages": list(STAGES),
+                "certification": "evaluate",
+            },
+        )
+
+    def test_conf_requires_exactly_one_contract_reference(self):
+        with self.assertRaises(ValueError):
+            build_conf()
+
+        with self.assertRaises(ValueError):
+            build_conf(
+                "contract.yaml",
+                contract_id=17,
+            )
+
+        with self.assertRaises(ValueError):
+            build_conf(contract_id=0)
+
     @patch.dict("os.environ", {"AIRFLOW_ADMIN_PASSWORD": "", "DATAFORGE_ENV_FILE": "/nonexistent"}, clear=False)
     def test_from_env_requires_a_password(self):
         with self.assertRaises(AirflowClientError):

@@ -118,21 +118,44 @@ class AirflowClient:
 
 
 def build_conf(
-    contract: str,
+    contract: str | None = None,
     datasets: list[str] | None = None,
     gold: list[str] | None = None,
     stages: list[str] | None = None,
     certification: str = "evaluate",
+    *,
+    contract_id: int | None = None,
 ) -> dict[str, Any]:
-    """Run parameters accepted by the ``dataforge_pipeline`` DAG."""
+    """Build parameters accepted by the generic DataForge DAG.
 
-    return {
-        "contract": contract,
+    Exactly one immutable contract reference is required:
+    a filesystem path for legacy/CLI use or a persisted contract_id
+    for control-plane initiated runs.
+    """
+
+    if (contract is None) == (contract_id is None):
+        raise ValueError(
+            "Exactly one of contract or contract_id must be provided"
+        )
+
+    if contract_id is not None and contract_id < 1:
+        raise ValueError(
+            "contract_id must be a positive integer"
+        )
+
+    conf: dict[str, Any] = {
         "datasets": datasets or [],
         "gold": gold or [],
         "stages": stages or list(STAGES),
         "certification": certification,
     }
+
+    if contract_id is not None:
+        conf["contract_id"] = contract_id
+    else:
+        conf["contract"] = contract
+
+    return conf
 
 
 def _split(value: str) -> list[str]:
@@ -141,7 +164,14 @@ def _split(value: str) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=f"Trigger the {DAG_ID} Airflow DAG")
-    parser.add_argument("--contract", required=True)
+    contract_group = parser.add_mutually_exclusive_group(
+        required=True
+    )
+    contract_group.add_argument("--contract")
+    contract_group.add_argument(
+        "--contract-id",
+        type=int,
+    )
     parser.add_argument("--datasets", default="")
     parser.add_argument("--gold", default="")
     parser.add_argument("--stages", default="")
@@ -157,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
         _split(args.gold),
         _split(args.stages),
         args.certification,
+        contract_id=args.contract_id,
     )
     run = client.trigger(conf)
     run_id = run["dag_run_id"]

@@ -56,7 +56,18 @@ def project_working_directory() -> Iterator[None]:
 
 
 def _contract(plan: PipelinePlan) -> DataForgeContract:
-    return load_contract(plan.absolute_contract_path())
+    if plan.contract_id is not None:
+        from src.orchestration.contracts import (
+            load_persisted_contract,
+        )
+
+        return load_persisted_contract(
+            plan.contract_id
+        )
+
+    return load_contract(
+        plan.absolute_contract_path()
+    )
 
 
 def run_bronze(plan: PipelinePlan, dataset_code: str) -> dict[str, Any]:

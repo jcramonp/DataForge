@@ -21,6 +21,7 @@ source:
 datasets:
   - code: orders
     name: Retail Orders
+    owner: DataForge
     source_object:
       path: tests/fixtures/e2e/orders.csv
       format: csv

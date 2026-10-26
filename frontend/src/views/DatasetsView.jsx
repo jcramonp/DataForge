@@ -1,42 +1,62 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { datasetScope } from '../services/scope';
 import { fetchDatasets, fetchDatasetProfiling } from '../services/api';
 import { Database, Key, Shield, Eye, X, CheckCircle2, AlertCircle } from 'lucide-react';
 
-export default function DatasetsView() {
+export default function DatasetsView({ scope = {} }) {
   const [datasets, setDatasets] = useState([]);
   const [selectedDataset, setSelectedDataset] = useState(null);
   const [profilingData, setProfilingData] = useState(null);
   const [loadingProfile, setLoadingProfile] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const scopeKey = JSON.stringify(scope);
+  const profileRequest = useRef(0);
 
   useEffect(() => {
-    fetchDatasets().then((data) => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setProfilingData(null);
+    setSelectedDataset(null);
+    setDatasets([]);
+    fetchDatasets(scope).then((data) => {
+      if (cancelled) return;
       setDatasets(data);
-      if (data.length > 0) setSelectedDataset(data[0]);
-    });
-  }, []);
+      setSelectedDataset(data[0] || null);
+    }).catch((err) => { if (!cancelled) setError(err.message); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; profileRequest.current += 1; };
+  }, [scopeKey]);
 
-  const handleOpenProfiling = async (datasetCode) => {
+  const handleOpenProfiling = async (dataset) => {
+    const requestId = ++profileRequest.current;
     setLoadingProfile(true);
+    setProfilingData(null);
+    setError(null);
     try {
-      const data = await fetchDatasetProfiling(datasetCode);
-      setProfilingData(data);
+      const data = await fetchDatasetProfiling(dataset.code, datasetScope(dataset));
+      if (requestId === profileRequest.current) setProfilingData(data);
     } catch (err) {
-      console.error(err);
+      if (requestId === profileRequest.current) setError(err.message);
     } finally {
-      setLoadingProfile(false);
+      if (requestId === profileRequest.current) setLoadingProfile(false);
     }
   };
 
   return (
     <div>
+      {error && <div role="alert" className="card">{error}</div>}
+      {loading && <p>Loading datasets…</p>}
+      {!loading && !error && datasets.length === 0 && <p>No registered datasets in this scope.</p>}
       {/* Top Selector Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginBottom: '20px' }}>
         {datasets.map((d) => {
-          const isSelected = selectedDataset?.code === d.code;
+          const isSelected = selectedDataset?.dataset_id === d.dataset_id;
           return (
             <div
-              key={d.code}
-              onClick={() => setSelectedDataset(d)}
+              key={d.dataset_id}
+              onClick={() => { profileRequest.current += 1; setLoadingProfile(false); setSelectedDataset(d); setProfilingData(null); setError(null); }}
               style={{
                 padding: '14px 16px',
                 background: isSelected ? 'var(--surface-raised)' : 'var(--surface)',
@@ -51,7 +71,7 @@ export default function DatasetsView() {
                 <span className="badge badge-neutral mono" style={{ fontSize: '10px' }}>{d.source_type}</span>
               </div>
               <div style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>
-                {d.columns_count} columns · {d.rules_count} quality rules
+                {d.client}/{d.project}/{d.source_code} · {d.columns_count} columns · {d.rules_count} quality rules
               </div>
               <div style={{ marginTop: '8px', display: 'flex', gap: '6px' }}>
                 <span className={`badge ${d.certification_status === 'certified' ? 'badge-positive' : 'badge-warning'}`}>
@@ -81,10 +101,11 @@ export default function DatasetsView() {
 
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => handleOpenProfiling(selectedDataset.code)}
+              disabled={loadingProfile}
+              onClick={() => handleOpenProfiling(selectedDataset)}
             >
               <Eye size={13} color="#1d5fbf" />
-              <span>Inspect Profiling Facts</span>
+              <span>{loadingProfile ? 'Loading profile…' : 'Inspect Profiling Facts'}</span>
             </button>
           </div>
 
@@ -101,6 +122,7 @@ export default function DatasetsView() {
                 </tr>
               </thead>
               <tbody>
+                {selectedDataset.schema.length === 0 && <tr><td colSpan={6}>No declared source schema for this dataset. Generated Gold outputs are available in Data Assets.</td></tr>}
                 {selectedDataset.schema.map((col) => {
                   const isPk = selectedDataset.primary_keys?.includes(col.name);
                   return (

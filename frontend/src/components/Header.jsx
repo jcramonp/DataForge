@@ -1,5 +1,6 @@
 import React from 'react';
-import { RefreshCw, Server, CheckCircle2 } from 'lucide-react';
+import { sourceKey } from '../services/scope';
+import { RefreshCw, Server } from 'lucide-react';
 
 const TAB_TITLES = {
   overview: 'Platform Overview & Health',
@@ -12,7 +13,7 @@ const TAB_TITLES = {
   copilot: 'LLM Configuration Copilot',
 };
 
-export default function Header({ activeTab, onRefresh, activeSource, setActiveSource }) {
+export default function Header({ activeTab, onRefresh, activeSource, setActiveSource, sources = [], connected }) {
   return (
     <header className="top-header">
       <div className="header-left">
@@ -23,10 +24,14 @@ export default function Header({ activeTab, onRefresh, activeSource, setActiveSo
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: '#4b5563' }}>
           <Server size={14} color="#1d5fbf" />
           <span>Control Plane:</span>
-          <span className="badge badge-positive" style={{ padding: '2px 6px' }}>FastAPI Connected</span>
+          <span className={`badge ${connected === true ? 'badge-positive' : 'badge-warning'}`} style={{ padding: '2px 6px' }}>
+            {connected === null ? 'Checking…' : connected ? 'FastAPI Connected' : 'Control plane unavailable'}
+          </span>
         </div>
 
         <select
+          aria-label="Source filter"
+          disabled={activeTab === 'onboarding' || activeTab === 'copilot'}
           value={activeSource}
           onChange={(e) => setActiveSource(e.target.value)}
           style={{
@@ -39,8 +44,11 @@ export default function Header({ activeTab, onRefresh, activeSource, setActiveSo
           }}
         >
           <option value="all">All Sources (Multi-Source)</option>
-          <option value="olist-csv">Olist CSV Pilot</option>
-          <option value="crm-postgres">CRM PostgreSQL (2nd Source)</option>
+          {sources.map((source) => (
+            <option key={sourceKey(source)} value={sourceKey(source)}>
+              {source.client_code} / {source.project_code} / {source.name}
+            </option>
+          ))}
         </select>
 
         <button className="btn btn-secondary btn-sm" onClick={onRefresh} title="Refresh data">

@@ -45,6 +45,7 @@ class PipelinePlan:
     gold: list[str]
     certification: str = "evaluate"
     parameters: dict[str, Any] = field(default_factory=dict)
+    contract_id: int | None = None
 
     def runs(self, stage: str) -> bool:
         return stage in self.stages
@@ -64,6 +65,10 @@ class PipelinePlan:
         return [(stage, target) for stage in STAGES for target in self.targets(stage)]
 
     def absolute_contract_path(self) -> Path:
+        if self.contract_id is not None:
+            raise PlanError(
+                "Persisted contracts do not have a filesystem path"
+            )
         return resolve_contract_path(self.contract_path)
 
     def to_dict(self) -> dict[str, Any]:
@@ -113,6 +118,154 @@ def _load(contract_path: Path) -> DataForgeContract:
         raise PlanError(f"Invalid contract {contract_path.name}: {exc}") from exc
 
 
+def build_plan_from_contract(
+    parsed: DataForgeContract,
+    *,
+    contract_reference: str,
+    contract_id: int | None = None,
+    datasets: Iterable[str] | str | None = None,
+    gold: Iterable[str] | str | None = None,
+    stages: Iterable[str] | str | None = None,
+    certification: str = "evaluate",
+) -> PipelinePlan:
+    """Build a validated plan from an already validated contract model."""
+
+    requested_stages = _normalize(stages) or list(STAGES)
+
+    unknown_stages = sorted(
+        set(requested_stages) - set(STAGES)
+    )
+
+    if unknown_stages:
+        raise PlanError(
+            f"Unknown stage(s): {', '.join(unknown_stages)}. "
+            f"Valid stages: {', '.join(STAGES)}"
+        )
+
+    ordered_stages = [
+        stage
+        for stage in STAGES
+        if stage in requested_stages
+    ]
+
+    contract_datasets = [
+        dataset.code
+        for dataset in parsed.datasets
+    ]
+
+    requested_datasets = _normalize(datasets)
+
+    unknown_datasets = sorted(
+        set(requested_datasets)
+        - set(contract_datasets)
+    )
+
+    if unknown_datasets:
+        raise PlanError(
+            "Unknown dataset(s) for contract "
+            f"{parsed.project.code}: "
+            f"{', '.join(unknown_datasets)}. "
+            f"Available: {', '.join(contract_datasets)}"
+        )
+
+    selected_datasets = [
+        code
+        for code in contract_datasets
+        if (
+            not requested_datasets
+            or code in requested_datasets
+        )
+    ]
+
+    enabled_gold = [
+        config.code
+        for config in parsed.gold
+        if config.enabled
+    ]
+
+    requested_gold = _normalize(gold)
+
+    if requested_gold:
+        all_gold = {
+            config.code: config
+            for config in parsed.gold
+        }
+
+        unknown_gold = sorted(
+            code
+            for code in requested_gold
+            if code not in all_gold
+        )
+
+        if unknown_gold:
+            raise PlanError(
+                "Unknown Gold dataset(s): "
+                f"{', '.join(unknown_gold)}. "
+                "Available: "
+                f"{', '.join(all_gold) or 'none'}"
+            )
+
+        disabled = sorted(
+            code
+            for code in requested_gold
+            if not all_gold[code].enabled
+        )
+
+        if disabled:
+            raise PlanError(
+                "Gold dataset(s) disabled in the contract: "
+                f"{', '.join(disabled)}"
+            )
+
+    selected_gold = [
+        code
+        for code in enabled_gold
+        if (
+            not requested_gold
+            or code in requested_gold
+        )
+    ]
+
+    if (
+        requested_gold
+        and "gold" not in ordered_stages
+    ):
+        raise PlanError(
+            "Gold datasets were requested but the "
+            "'gold' stage is not selected"
+        )
+
+    if certification not in CERTIFICATION_MODES:
+        raise PlanError(
+            f"Unknown certification mode '{certification}'. "
+            f"Valid: {', '.join(CERTIFICATION_MODES)}"
+        )
+
+    return PipelinePlan(
+        contract_path=contract_reference,
+        client_code=parsed.client.code,
+        project_code=parsed.project.code,
+        source_code=parsed.source.code,
+        stages=ordered_stages,
+        datasets=selected_datasets,
+        gold=(
+            selected_gold
+            if "gold" in ordered_stages
+            else []
+        ),
+        certification=certification,
+        parameters={
+            "contract": contract_reference,
+            "contract_id": contract_id,
+            "datasets": requested_datasets,
+            "gold": requested_gold,
+            "stages": requested_stages,
+            "certification": certification,
+        },
+        contract_id=contract_id,
+    )
+
+
 def build_plan(
     contract: str | Path,
     *,
@@ -121,74 +274,51 @@ def build_plan(
     stages: Iterable[str] | str | None = None,
     certification: str = "evaluate",
 ) -> PipelinePlan:
-    """Validate an orchestration request against its contract.
-
-    - ``stages``: subset of ``STAGES`` (default: all), always executed in order.
-    - ``datasets``: source dataset codes (default: every dataset in the contract).
-    - ``gold``: Gold codes (default: every enabled Gold dataset).
-    - ``certification``: ``evaluate`` (report readiness only) or ``validate``
-      (also move ready versions from draft to validated). Certifying is never
-      automatic.
-    """
+    """Build a plan from a filesystem contract."""
 
     contract_path = resolve_contract_path(contract)
     parsed = _load(contract_path)
 
-    requested_stages = _normalize(stages) or list(STAGES)
-    unknown_stages = sorted(set(requested_stages) - set(STAGES))
-    if unknown_stages:
-        raise PlanError(
-            f"Unknown stage(s): {', '.join(unknown_stages)}. Valid stages: {', '.join(STAGES)}"
-        )
-    ordered_stages = [stage for stage in STAGES if stage in requested_stages]
-
-    contract_datasets = [d.code for d in parsed.datasets]
-    requested_datasets = _normalize(datasets)
-    unknown_datasets = sorted(set(requested_datasets) - set(contract_datasets))
-    if unknown_datasets:
-        raise PlanError(
-            f"Unknown dataset(s) for contract {parsed.project.code}: {', '.join(unknown_datasets)}. "
-            f"Available: {', '.join(contract_datasets)}"
-        )
-    selected_datasets = [d for d in contract_datasets if not requested_datasets or d in requested_datasets]
-
-    enabled_gold = [g.code for g in parsed.gold if g.enabled]
-    requested_gold = _normalize(gold)
-    if requested_gold:
-        all_gold = {g.code: g for g in parsed.gold}
-        unknown_gold = sorted(code for code in requested_gold if code not in all_gold)
-        if unknown_gold:
-            raise PlanError(
-                f"Unknown Gold dataset(s): {', '.join(unknown_gold)}. "
-                f"Available: {', '.join(all_gold) or 'none'}"
-            )
-        disabled = sorted(code for code in requested_gold if not all_gold[code].enabled)
-        if disabled:
-            raise PlanError(f"Gold dataset(s) disabled in the contract: {', '.join(disabled)}")
-    selected_gold = [g for g in enabled_gold if not requested_gold or g in requested_gold]
-
-    if requested_gold and "gold" not in ordered_stages:
-        raise PlanError("Gold datasets were requested but the 'gold' stage is not selected")
-
-    if certification not in CERTIFICATION_MODES:
-        raise PlanError(
-            f"Unknown certification mode '{certification}'. Valid: {', '.join(CERTIFICATION_MODES)}"
-        )
-
-    return PipelinePlan(
-        contract_path=display_contract_path(contract_path),
-        client_code=parsed.client.code,
-        project_code=parsed.project.code,
-        source_code=parsed.source.code,
-        stages=ordered_stages,
-        datasets=selected_datasets,
-        gold=selected_gold if "gold" in ordered_stages else [],
+    return build_plan_from_contract(
+        parsed,
+        contract_reference=display_contract_path(
+            contract_path
+        ),
+        datasets=datasets,
+        gold=gold,
+        stages=stages,
         certification=certification,
-        parameters={
-            "contract": str(contract),
-            "datasets": requested_datasets,
-            "gold": requested_gold,
-            "stages": requested_stages,
-            "certification": certification,
-        },
+    )
+
+
+def build_persisted_plan(
+    contract_id: int,
+    *,
+    datasets: Iterable[str] | str | None = None,
+    gold: Iterable[str] | str | None = None,
+    stages: Iterable[str] | str | None = None,
+    certification: str = "evaluate",
+) -> PipelinePlan:
+    """Build a plan from an immutable PostgreSQL contract revision."""
+
+    from src.orchestration.contracts import (
+        PersistedContractError,
+        load_persisted_contract,
+    )
+
+    try:
+        parsed = load_persisted_contract(contract_id)
+    except PersistedContractError as exc:
+        raise PlanError(str(exc)) from exc
+
+    return build_plan_from_contract(
+        parsed,
+        contract_reference=(
+            f"db://configuration_contract/{contract_id}"
+        ),
+        contract_id=contract_id,
+        datasets=datasets,
+        gold=gold,
+        stages=stages,
+        certification=certification,
     )
