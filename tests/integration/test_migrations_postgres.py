@@ -19,6 +19,8 @@ EXPECTED_TABLES = {
     "asset_lineage",
     "dataset_certification",
     "certification_transition",
+    "orchestration_run",
+    "orchestration_task_run",
     "schema_migrations",
 }
 
@@ -30,6 +32,8 @@ EXPECTED_VIEWS = {
     "dataset_latest_run",
     "asset_lineage_edges",
     "dataset_certification_summary",
+    "orchestration_task_latest",
+    "orchestration_run_summary",
 }
 
 

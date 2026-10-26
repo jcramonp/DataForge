@@ -63,7 +63,7 @@ jobs:
           POSTGRES_USER: dataforge
           POSTGRES_PASSWORD: dataforge_test
         ports:
-          - 55432:5432
+          - 15432:5432
         options: >-
           --health-cmd "pg_isready -U dataforge -d dataforge_test"
           --health-interval 5s
@@ -81,11 +81,11 @@ jobs:
         # Service containers cannot override the command, so MinIO runs here.
         # Same image as docker-compose.yml (official minio/minio is no longer published).
         run: |
-          docker run -d --name minio -p 59000:9000 \
+          docker run -d --name minio --user 0:0 -p 19000:9000 \
             -e MINIO_ROOT_USER=dataforge -e MINIO_ROOT_PASSWORD=dataforge_test \
             cgr.dev/chainguard/minio:latest server /data
           for i in $(seq 1 30); do
-            curl -sf http://localhost:59000/minio/health/live && exit 0
+            curl -sf http://localhost:19000/minio/health/live && exit 0
             sleep 2
           done
           docker logs minio
@@ -95,7 +95,7 @@ jobs:
           python -m src.ops.migrate
           python -m src.ops.migrate
           python -m src.ops.migrate --status
-      - name: Run integration tests (migrations + generic pipeline end-to-end)
+      - name: Run integration tests (migrations, generic pipeline and orchestration end-to-end)
         run: python -m unittest discover -s tests/integration -t . -v
       - name: Readiness check against real services
         run: python -m src.ops.health
@@ -138,10 +138,52 @@ jobs:
           docker logs api
           exit 1
 
+  airflow-dag:
+    name: Airflow DAG (end-to-end)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: dataforge_test
+          POSTGRES_USER: dataforge
+          POSTGRES_PASSWORD: dataforge_test
+        ports:
+          - 15432:5432
+        options: >-
+          --health-cmd "pg_isready -U dataforge -d dataforge_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio --user 0:0 -p 19000:9000 \
+            -e MINIO_ROOT_USER=dataforge -e MINIO_ROOT_PASSWORD=dataforge_test \
+            cgr.dev/chainguard/minio:latest server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:19000/minio/health/live && exit 0
+            sleep 2
+          done
+          docker logs minio
+          exit 1
+      - name: Build Airflow image
+        run: docker build -f airflow/Dockerfile -t dataforge-airflow:ci .
+      - name: Import, structure and execute dataforge_pipeline with airflow dags test
+        run: |
+          docker run --rm --network host \
+            -v "$PWD:/opt/dataforge" -w /opt/dataforge \
+            --env-file config/environments/test.env \
+            -e PYTHONPATH=/opt/dataforge \
+            -e AIRFLOW__CORE__DAGS_FOLDER=/opt/dataforge/airflow/dags \
+            -e AIRFLOW__CORE__LOAD_EXAMPLES=false \
+            --entrypoint bash dataforge-airflow:ci .github/scripts/airflow_dag_e2e.sh
+
   ci-status:
     name: CI status
     if: always()
-    needs: [lint, unit-tests, integration-tests, frontend, containers]
+    needs: [lint, unit-tests, integration-tests, frontend, containers, airflow-dag]
     runs-on: ubuntu-latest
     steps:
       - name: Fail if any required job failed
