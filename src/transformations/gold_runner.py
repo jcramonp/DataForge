@@ -26,6 +26,9 @@ import psycopg
 from src.contracts.loader import load_contract
 from src.contracts.models import DataForgeContract, GoldConfig, GoldOperation
 from src.transformations.gold_generic import build_gold_dataset_from_plan
+from src.governance.certification import evaluate_certification
+from src.governance.lineage import register_lineage_edges
+from src.governance.metadata import dataframe_schema_hash
 
 logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -74,54 +77,81 @@ def postgres_connection():
 def latest_validated_silver_asset(
     conn: psycopg.Connection,
     client_code: str,
+    project_code: str,
+    source_code: str,
     dataset_code: str,
 ) -> dict[str, Any]:
-    """Retrieve the latest successful validated Silver asset metadata for a dataset."""
+    """Retrieve the latest validated Silver asset for one exact dataset."""
+
     with conn.cursor() as cur:
         cur.execute(
             """
             SELECT
+                da.asset_id,
                 dv.dataset_version_id,
                 dv.source_checksum,
                 da.storage_uri,
                 da.row_count,
                 pr.run_id
             FROM client c
-            JOIN project p ON p.client_id = c.client_id
-            JOIN data_source ds ON ds.project_id = p.project_id
-            JOIN dataset d ON d.source_id = ds.source_id
-            JOIN dataset_version dv ON dv.dataset_id = d.dataset_id
-            JOIN pipeline_run pr ON pr.dataset_version_id = dv.dataset_version_id
-            JOIN data_asset da ON da.run_id = pr.run_id
+            JOIN project p
+                ON p.client_id = c.client_id
+            JOIN data_source ds
+                ON ds.project_id = p.project_id
+            JOIN dataset d
+                ON d.source_id = ds.source_id
+            JOIN dataset_version dv
+                ON dv.dataset_id = d.dataset_id
+            JOIN pipeline_run pr
+                ON pr.dataset_version_id = dv.dataset_version_id
+            JOIN data_asset da
+                ON da.run_id = pr.run_id
             WHERE c.client_code = %s
+              AND p.project_code = %s
+              AND ds.source_code = %s
               AND d.dataset_code = %s
               AND pr.run_type = 'silver_quality_gate'
               AND pr.status = 'success'
               AND da.layer = 'silver'
-            ORDER BY pr.finished_at DESC NULLS LAST, pr.run_id DESC
+            ORDER BY
+                pr.finished_at DESC NULLS LAST,
+                pr.run_id DESC
             LIMIT 1
             """,
-            (client_code, dataset_code),
+            (
+                client_code,
+                project_code,
+                source_code,
+                dataset_code,
+            ),
         )
+
         row = cur.fetchone()
 
     if row is None:
         raise RuntimeError(
-            f"No successful validated Silver asset found for dataset '{dataset_code}' (client '{client_code}')"
+            "No successful validated Silver asset found for "
+            f"client='{client_code}', "
+            f"project='{project_code}', "
+            f"source='{source_code}', "
+            f"dataset='{dataset_code}'"
         )
 
     return {
-        "dataset_version_id": row[0],
-        "source_checksum": row[1],
-        "storage_uri": row[2],
-        "row_count": int(row[3]),
-        "silver_run_id": row[4],
+        "asset_id": int(row[0]),
+        "dataset_version_id": int(row[1]),
+        "source_checksum": row[2],
+        "storage_uri": row[3],
+        "row_count": int(row[4]),
+        "silver_run_id": int(row[5]),
     }
 
 
 def ensure_gold_dataset_version(
     conn: psycopg.Connection,
     client_code: str,
+    project_code: str,
+    source_code: str,
     gold_config: GoldConfig,
     source_checksums: dict[str, str],
 ) -> int:
@@ -138,13 +168,24 @@ def ensure_gold_dataset_version(
             JOIN project p ON p.client_id = c.client_id
             JOIN data_source ds ON ds.project_id = p.project_id
             WHERE c.client_code = %s
+              AND p.project_code = %s
+              AND ds.source_code = %s
             LIMIT 1
             """,
-            (client_code,),
+            (
+                client_code,
+                project_code,
+                source_code,
+            ),
         )
         row = cur.fetchone()
         if row is None:
-            raise RuntimeError(f"Data source metadata was not found for client '{client_code}'")
+            raise RuntimeError(
+                "Data source metadata was not found for "
+                f"client='{client_code}', "
+                f"project='{project_code}', "
+                f"source='{source_code}'"
+            )
         source_id = row[0]
 
         cur.execute(
@@ -192,6 +233,31 @@ def ensure_gold_dataset_version(
         return cur.fetchone()[0]
 
 
+def update_dataset_version_schema(
+    conn: psycopg.Connection,
+    dataset_version_id: int,
+    frame: pd.DataFrame,
+) -> str:
+    """Persist and return the actual schema hash of a Gold dataset."""
+
+    schema_hash = dataframe_schema_hash(frame)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE dataset_version
+            SET schema_hash = %s
+            WHERE dataset_version_id = %s
+            """,
+            (
+                schema_hash,
+                dataset_version_id,
+            ),
+        )
+
+    return schema_hash
+
+
 def start_gold_pipeline_run(
     conn: psycopg.Connection,
     dataset_version_id: int,
@@ -222,8 +288,11 @@ def register_gold_asset(
     storage_uri: str,
     row_count: int,
     checksum: str,
-) -> None:
+) -> int:
+    """Register a Gold asset and return its identifier."""
+
     asset_name = f"{client_code}_{gold_code}"
+
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -236,10 +305,34 @@ def register_gold_asset(
                 row_count,
                 checksum
             )
-            VALUES (%s, 'gold', %s, %s, 'parquet', %s, %s)
+            VALUES (
+                %s,
+                'gold',
+                %s,
+                %s,
+                'parquet',
+                %s,
+                %s
+            )
+            RETURNING asset_id
             """,
-            (run_id, asset_name, storage_uri, row_count, checksum),
+            (
+                run_id,
+                asset_name,
+                storage_uri,
+                row_count,
+                checksum,
+            ),
         )
+
+        row = cur.fetchone()
+
+    if row is None:
+        raise RuntimeError(
+            f"Gold asset '{asset_name}' could not be registered."
+        )
+
+    return int(row[0])
 
 
 def finish_gold_pipeline_run(
@@ -282,6 +375,7 @@ def execute_gold_pipeline_for_dataset(
     """Execute declarative Gold transformation plan for one Gold dataset."""
     client_code = contract.client.code
     project_code = contract.project.code
+    source_code = contract.source.code
 
     # Identify all datasets required by base and joins
     required_datasets = [gold_config.base_dataset]
@@ -292,15 +386,26 @@ def execute_gold_pipeline_for_dataset(
 
     # Resolve latest validated Silver metadata for each required dataset
     sources = {
-        ds_code: latest_validated_silver_asset(conn, client_code, ds_code)
+        ds_code: latest_validated_silver_asset(
+            conn=conn,
+            client_code=client_code,
+            project_code=project_code,
+            source_code=source_code,
+            dataset_code=ds_code,
+        )
         for ds_code in required_datasets
     }
 
     dataset_version_id = ensure_gold_dataset_version(
         conn,
         client_code=client_code,
+        project_code=project_code,
+        source_code=source_code,
         gold_config=gold_config,
-        source_checksums={ds: meta["source_checksum"] for ds, meta in sources.items()},
+        source_checksums={
+            ds: meta["source_checksum"]
+            for ds, meta in sources.items()
+        },
     )
 
     base_rows = sources[gold_config.base_dataset]["row_count"]
@@ -321,6 +426,11 @@ def execute_gold_pipeline_for_dataset(
                 gold_config=gold_config,
                 datasets_by_code=frames,
             )
+            schema_hash = update_dataset_version_schema(
+                conn=conn,
+                dataset_version_id=dataset_version_id,
+                frame=gold_df,
+            )
 
             # Save and upload Gold Parquet
             gold_filename = f"{gold_config.code}.parquet"
@@ -332,7 +442,7 @@ def execute_gold_pipeline_for_dataset(
             storage_uri = f"s3://{gold_bucket}/{gold_key}"
             s3.upload_file(str(gold_path), gold_bucket, gold_key)
 
-            register_gold_asset(
+            gold_asset_id = register_gold_asset(
                 conn,
                 run_id=run_id,
                 client_code=client_code,
@@ -342,6 +452,30 @@ def execute_gold_pipeline_for_dataset(
                 checksum=gold_checksum,
             )
 
+            relation_type = (
+                "joined_from"
+                if len(sources) > 1
+                else "derived_from"
+            )
+
+            register_lineage_edges(
+                conn,
+                [
+                    {
+                        "parent_asset_id": metadata["asset_id"],
+                        "child_asset_id": gold_asset_id,
+                        "relation_type": relation_type,
+                        "created_by_run_id": run_id,
+                        "metadata": {
+                            "stage": "silver_to_gold",
+                            "source_dataset": dataset_code,
+                            "gold_dataset": gold_config.code,
+                        },
+                    }
+                    for dataset_code, metadata in sources.items()
+                ],
+            )
+
             finish_gold_pipeline_run(
                 conn,
                 run_id=run_id,
@@ -349,16 +483,28 @@ def execute_gold_pipeline_for_dataset(
                 accepted_rows=len(gold_df),
                 rejected_rows=base_rows - len(gold_df),
             )
+            certification = evaluate_certification(
+                conn=conn,
+                dataset_version_id=dataset_version_id,
+            )
             conn.commit()
 
             return {
                 "gold_code": gold_config.code,
+                "dataset_version_id": dataset_version_id,
                 "run_id": run_id,
                 "input_rows": base_rows,
                 "output_rows": len(gold_df),
                 "excluded_rows": base_rows - len(gold_df),
                 "storage_uri": storage_uri,
                 "checksum": gold_checksum,
+                "schema_hash": schema_hash,
+                "gold_asset_id": gold_asset_id,
+                "parent_asset_ids": {
+                    dataset_code: metadata["asset_id"]
+                    for dataset_code, metadata in sources.items()
+                },
+                "certification": certification,
             }
 
     except Exception as exc:
