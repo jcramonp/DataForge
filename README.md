@@ -1,88 +1,237 @@
 # DataForge
 
-DataForge is an automated and scalable data engineering platform designed to transform heterogeneous data sources into governed, validated, and analytics-ready datasets.
+[![CI](https://github.com/jcramonp/DataForge/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/jcramonp/DataForge/actions/workflows/ci.yml)
 
-## Project context
+DataForge is an automated, scalable, and contract-driven data engineering platform designed to transform heterogeneous data sources into governed, validated, and analytics-ready datasets.
 
-DataForge is being developed as a data engineering solution for **AI Solutions LATAM**, a simulated consulting company that delivers data engineering, advanced analytics, and machine learning projects for multiple clients.
+---
 
-The platform addresses a recurring operational problem: each new client may provide data through different technologies and formats, forcing teams to repeatedly build custom ingestion, cleaning, validation, and transformation processes. DataForge aims to standardize and automate that lifecycle so new projects can be onboarded with greater reuse, traceability, quality, and scalability.
+## Sprint 2 delivery
 
-## Core data flow
+Start with the [requirements and evidence matrix](docs/delivery/sprint2-requirements.md).
+It links the [current architecture](docs/sprint-2/architecture.md),
+[changelog](CHANGELOG.md), [data dictionary](docs/governance/data-dictionary.md),
+[data catalog](docs/governance/data-catalog.md), [RACI](docs/governance/raci.md),
+[applied PostgreSQL optimizations](docs/evidence/metadata-performance-verification.md),
+and [live-demo script](docs/delivery/sprint2-demo-script.md).
+The PDF presentation is in `docs/delivery/dataforge-sprint2.pdf`.
 
-`Source -> Ingestion -> Bronze -> Validation -> Silver -> Gold -> Certified Dataset -> Consumption`
+The implemented infrastructure is **local Docker Compose**. AWS is a reference
+architecture; a deployed AWS environment is not claimed. Final-Sprint DataOps
+and downstream consumption are outside the required Sprint 2 delivery.
 
-Data that does not satisfy the defined quality rules is redirected to a quarantine area for analysis and possible reprocessing.
+## Project Context
 
-## Sprint 1 — Alpha Product
+DataForge is developed as a modular data engineering solution for **AI Solutions LATAM**, a consulting company delivering data engineering, advanced analytics, and machine learning projects across diverse client environments.
 
-The current objective is to build the first end-to-end functional slice of DataForge. The Alpha Product should demonstrate:
+The platform addresses a core operational bottleneck: each new client provides data in different formats (CSV, PostgreSQL, REST APIs) with custom schemas and quality criteria, forcing teams to write repetitive, ad-hoc pipelines. DataForge standardizes and automates this lifecycle using **declarative contracts**, generic connectors, automated quality gates with quarantine routing, and a modern control-plane web interface.
 
-- discovery and profiling of a pilot data source;
-- automated ingestion into the raw/Bronze layer;
-- validation and data-quality checks;
-- separation of invalid records into quarantine;
-- transformation into Silver and Gold datasets;
-- initial metadata, governance, and traceability decisions;
-- documented architecture and data model;
-- evidence of the implemented flow.
+---
 
-### Frozen Alpha architecture
+## Core Data Flow
 
-For Sprint 1, the implementation is intentionally limited to a reproducible local vertical slice:
+```text
+Source -> Ingestion -> Bronze -> Validation & Quality -> Silver -> Gold -> Certified Dataset -> Consumption
+                                      |
+                                      +--> Quarantine (Invalid Records)
+```
 
-- Olist CSV files as the pilot source;
-- Python + pandas for ingestion and transformations;
-- Great Expectations for declarative data quality;
-- PostgreSQL for DataForge operational metadata;
-- MinIO + Parquet for Bronze, Silver, Quarantine and Gold data assets;
-- Docker Compose for the local runtime;
-- Airflow only after the core manual pipeline is stable.
+- **Bronze**: Raw ingested data preserved in Parquet format with source checksums and lineage metadata.
+- **Silver**: Standardized, clean data with validated data types and string normalizations.
+- **Quarantine**: Records failing critical quality rules, isolated for investigation and auditable reprocessing.
+- **Gold**: Integrated, aggregated, and curated analytical datasets assembled through declarative transformation plans.
 
-Kafka, PySpark, OpenMetadata, Prometheus/Grafana, MLflow and Kubernetes remain part of the broader target architecture and are outside the Sprint 1 Alpha unless implementation evidence proves they are necessary.
+---
 
-Detailed decisions are documented in:
+## Getting Started: Running the Project
 
-- `docs/data-model/alpha-data-model.md`
-- `docs/architecture/alpha-architecture.md`
+### 1. Prerequisites
+- **Python**: 3.11+
+- **Node.js & npm**: Node.js 18+ (for Web Interface)
+- **Docker & Docker Compose**: For local PostgreSQL metadata and MinIO object storage
 
-## Initial technology stack
+---
 
-The Alpha Product will prioritize a minimal, demonstrable stack:
+### 2. Infrastructure & Environment Setup
 
-- Python
-- PostgreSQL
-- MinIO
-- Apache Parquet
-- pandas
-- Great Expectations
-- Docker / Docker Compose
-- Apache Airflow (for pipeline orchestration as the Alpha flow stabilizes)
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/jcramonp/DataForge.git
+   cd DataForge
+   ```
 
-Additional technologies such as PySpark, Kafka, OpenMetadata, Prometheus, Grafana, and MLflow are part of the target architecture and will be incorporated progressively when justified by the project scope.
+2. **Configure environment variables**:
+   ```bash
+   cp .env.example .env
+   ```
+   *(Ensure local database and MinIO credentials match `.env`)*
 
-### Architecture and Data Modeling Diagrams
-- Architecture Diagram Overview
-<img width="700" height="420" alt="image" src="https://github.com/user-attachments/assets/d21ff69e-4e69-43bd-a944-97d3199446d8" />
+3. **Start local infrastructure (PostgreSQL & MinIO)**:
+   ```bash
+   docker compose up -d postgres minio minio-init
+   ```
+   - PostgreSQL bootstraps the control-plane schema from `database/migrations/` on first boot. Upgrade an existing database with `python -m src.ops.migrate`.
+   - `minio-init` creates the storage buckets: `dataforge-bronze`, `dataforge-silver`, `dataforge-quarantine`, `dataforge-gold`.
 
-- Data Modeling Diagram Overview
-<img width="750" height="400" alt="image" src="https://github.com/user-attachments/assets/d718fab8-55df-4029-9f2a-958c434be862" />
+4. **Install Python dependencies** (`requirements-dev.txt` adds lint tooling on top of `requirements.txt`):
+   ```bash
+   python -m pip install -r requirements-dev.txt
+   ```
 
+   Then apply migrations and check readiness:
+   ```bash
+   python -m src.ops.migrate
+   python -m src.ops.health
+   ```
 
-## Engineering principles
+5. **Install Frontend dependencies**:
+   ```bash
+   cd frontend
+   npm install
+   cd ..
+   ```
 
-DataForge is designed around:
+---
 
-- automation;
-- scalability;
-- modularity;
-- data quality;
-- governance and traceability;
-- resilience and idempotency;
-- reproducibility;
-- DataOps practices.
+### 3. Running the Control Plane & Web Interface
+
+#### A. FastAPI Backend Control Plane
+Start the API service from the repository root:
+```bash
+uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+```
+- **Interactive Swagger Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Liveness**: [http://localhost:8000/api/health](http://localhost:8000/api/health)
+- **Readiness** (database, migrations, buckets, contracts): [http://localhost:8000/api/ready](http://localhost:8000/api/ready)
+- **Run metrics**: [http://localhost:8000/api/ops/summary](http://localhost:8000/api/ops/summary)
+- Containerized alternative: `docker compose --profile api up -d --build`
+
+#### B. React + Vite Web Interface
+Start the development server from the `frontend/` directory:
+```bash
+cd frontend
+npm run dev
+```
+- **Web Interface URL**: [http://localhost:3000](http://localhost:3000) (Vite proxies `/api` to `localhost:8000`)
+- Features: Real-time project overview, source onboarding with connection tests, dataset schema and profiling views, quality gate review, pipeline triggers, quarantine inspection, asset lake explorer, and lineage graphs.
+
+---
+
+### 4. Running Contract-Driven Pipelines
+
+DataForge executes end-to-end pipelines driven by declarative YAML/JSON contracts (e.g., [`config/examples/olist.yaml`](config/examples/olist.yaml)).
+
+#### Orchestrated pipeline (recommended)
+One generic Airflow DAG, `dataforge_pipeline`, runs any contract: Bronze → profiling → Silver + Quality Gate → Gold → certification. New sources need a contract, not a new DAG ([`docs/operations/orchestration.md`](docs/operations/orchestration.md)).
+```bash
+docker compose up -d                       # Airflow UI: http://localhost:8080 (login: AIRFLOW_ADMIN_* in .env)
+python -m src.orchestration.airflow_client --contract config/examples/olist.yaml --wait
+```
+The same pipeline runs without Airflow:
+```bash
+python -m src.orchestration.pipeline --contract config/examples/olist.yaml
+```
+
+Each stage can also be run on its own:
+
+#### A. Schema Discovery & Profiling
+Analyze source data to discover schemas, candidate keys, nullability, and generate contract drafts:
+```bash
+python -m src.discovery.run_profiling --contract config/examples/olist.yaml
+```
+
+#### B. Generic Bronze Ingestion
+Ingest configured datasets into the raw data lake layer with SHA-256 validation:
+```bash
+python -m src.ingestion.bronze_generic --contract config/examples/olist.yaml
+```
+
+#### C. Generic Silver Transformation & Quality Gate
+Apply declarative transformations, evaluate Great Expectations quality rules, and partition invalid records:
+```bash
+python -m src.transformations.silver_runner --contract config/examples/olist.yaml
+```
+
+#### D. Configurable Gold Analytical Engine
+Execute declarative transformation plans (joins, arithmetic derivations, aggregations) to produce Gold datasets:
+```bash
+python -m src.transformations.gold_runner --contract config/examples/olist.yaml
+```
+
+---
+
+### 5. Running Automated Tests
+
+Run the unit and regression suite (Sprint 1 Olist modules, Sprint 2 generic engine, API, operations tooling):
+```bash
+python -m unittest discover -s tests -t .
+```
+
+Run a single module or test:
+```bash
+python -m unittest tests.test_generic_silver_quality
+python -m unittest tests.test_generic_silver_quality.GenericSilverTransformationTests.test_apply_trim
+```
+
+Lint, and verify the frontend production build:
+```bash
+ruff check .
+cd frontend
+npm run build
+```
+
+Integration tests against real PostgreSQL and MinIO (migrations plus an end-to-end generic pipeline) are opt-in; see [`docs/operations/runbook.md`](docs/operations/runbook.md#run-the-integration-suite-locally). GitHub Actions runs all of the above on every pull request ([`docs/operations/README.md`](docs/operations/README.md)).
+
+---
+
+### 6. Local Storage & Metadata Inspection
+
+- **MinIO Console**: [http://localhost:9001](http://localhost:9001)  
+  - User: `dataforge`  
+  - Password: `change_me_minio`  
+  - Inspect buckets: `dataforge-bronze`, `dataforge-silver`, `dataforge-quarantine`, `dataforge-gold`.
+
+- **PostgreSQL Control Plane Database**: `localhost:5432`  
+  - Database: `dataforge`  
+  - User: `dataforge`  
+  - Password: `change_me_postgres`  
+  - Tables: `client`, `project`, `data_source`, `dataset`, `dataset_version`, `pipeline_run`, `data_asset`, `quality_result`.
+
+---
+
+## Operations
+
+- [`docs/operations/configuration.md`](docs/operations/configuration.md): `local` / `test` / `aws` environments, runtime variables, secrets and AWS IAM permissions.
+- [`docs/operations/migrations.md`](docs/operations/migrations.md): versioned control-plane migrations (`python -m src.ops.migrate`).
+- [`docs/operations/observability.md`](docs/operations/observability.md): health/readiness, structured JSON logs with `run_id`/`dataset`, run metrics (`python -m src.ops.run_summary`).
+- [`docs/operations/runbook.md`](docs/operations/runbook.md): rebuilding the demo from scratch, deployment, rollback and recovery.
+
+---
+
+## Technology Stack
+
+- **Core & Transformations**: Python 3.11+, pandas, NumPy, PyArrow
+- **Data Quality**: Great Expectations
+- **Contracts & Validation**: Pydantic v2, PyYAML
+- **Metadata & Control Plane**: PostgreSQL 16, psycopg v3, FastAPI, Uvicorn
+- **Object Storage**: MinIO (S3-compatible API), Boto3
+- **Frontend & UI**: React 18, Vite, Vanilla CSS with Geist typography and modern dark-mode aesthetics
+- **Orchestration & Runtimes**: Docker Compose, Apache Airflow
+- **CI**: GitHub Actions, ruff
+
+---
+
+## Engineering Principles
+
+- **Declarative Contracts**: Platform behavior is configured via contracts, avoiding bespoke per-client code.
+- **Data Quality as a First-Class Citizen**: Bad records are quarantined without halting ingestion.
+- **Auditability & Traceability**: Every pipeline run, data asset, and quality evaluation is tracked in metadata.
+- **Idempotency & Reproducibility**: Implements deterministic hashing and versioned data assets.
+- **API-Driven Architecture**: Separation of control plane and storage.
+
+---
 
 ## Course
 
-SI4002 — Proyecto de Ingeniería de Datos  
+**SI4002 — Proyecto de Ingeniería de Datos**  
 Universidad EAFIT

@@ -1,0 +1,2 @@
+# Optional: rebuild docs/delivery/dataforge-sprint2.pdf only.
+reportlab>=4.0,<5.0

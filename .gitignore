@@ -36,3 +36,13 @@ airflow-webserver.pid
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Frontend & Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.taste-skill/
+.agents/
+skills-lock.json
+
+reports/profiling/

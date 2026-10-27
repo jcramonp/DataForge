@@ -8,7 +8,7 @@ This document covers checklist steps 6 and 7 for the Sprint 1 Alpha: the minimal
 
 Purpose: DataForge operational metadata/control plane. It stores clients, projects, sources, datasets, dataset versions, pipeline runs, quality results and produced data assets. Client business data is not stored here as the primary lake storage.
 
-The container mounts `database/schema.sql` into PostgreSQL's initialization directory. On the first creation of the PostgreSQL volume, the schema is created automatically.
+The container mounts `database/migrations/` (formerly `database/schema.sql`) into PostgreSQL's initialization directory. On the first creation of the PostgreSQL volume, the schema is created automatically. Existing volumes are upgraded with `python -m src.ops.migrate` (see `docs/operations/migrations.md`).
 
 Default host access after configuring `.env`:
 
@@ -113,7 +113,7 @@ To deliberately reset the entire local Alpha state:
 docker compose down -v
 ```
 
-This deletes both volumes. The next `docker compose up -d` recreates PostgreSQL and reruns `database/schema.sql`.
+This deletes both volumes. The next `docker compose up -d` recreates PostgreSQL and reapplies `database/migrations/`.
 
 ## Scope boundary
 

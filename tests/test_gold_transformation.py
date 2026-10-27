@@ -1,8 +1,13 @@
 import unittest
 
 import pandas as pd
+from unittest.mock import MagicMock
 
-from src.transformations.gold_olist import build_gold_dataset, parse_s3_uri
+from src.transformations.gold_olist import (
+    build_gold_dataset,
+    parse_s3_uri,
+    update_dataset_version_schema,
+)
 
 
 class GoldTransformationTests(unittest.TestCase):
@@ -124,6 +129,49 @@ class GoldTransformationTests(unittest.TestCase):
                 "freight_value",
                 "item_total",
             ],
+        )
+
+    def test_gold_schema_hash_is_persisted(
+        self,
+    ):
+        connection = MagicMock()
+        cursor = MagicMock()
+
+        connection.cursor.return_value.__enter__.return_value = (
+            cursor
+        )
+
+        frame = pd.DataFrame(
+            {
+                "order_id": ["o1"],
+                "item_total": [12.0],
+            }
+        )
+
+        update_dataset_version_schema(
+            connection,
+            dataset_version_id=15,
+            frame=frame,
+        )
+
+        cursor.execute.assert_called_once()
+
+        sql = cursor.execute.call_args.args[0]
+        params = cursor.execute.call_args.args[1]
+
+        self.assertIn(
+            "UPDATE dataset_version",
+            sql,
+        )
+
+        self.assertEqual(
+            params[1],
+            15,
+        )
+
+        self.assertEqual(
+            len(params[0]),
+            64,
         )
 
 

@@ -1,0 +1,1108 @@
+{
+  "$defs": {
+    "AggregationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "function": {
+          "$ref": "#/$defs/AggregationFunction"
+        },
+        "alias": {
+          "minLength": 1,
+          "title": "Alias",
+          "type": "string"
+        }
+      },
+      "required": [
+        "column",
+        "function",
+        "alias"
+      ],
+      "title": "AggregationConfig",
+      "type": "object"
+    },
+    "AggregationFunction": {
+      "enum": [
+        "sum",
+        "avg",
+        "min",
+        "max",
+        "count",
+        "nunique"
+      ],
+      "title": "AggregationFunction",
+      "type": "string"
+    },
+    "Classification": {
+      "enum": [
+        "public",
+        "internal",
+        "confidential",
+        "restricted"
+      ],
+      "title": "Classification",
+      "type": "string"
+    },
+    "ClientConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "code",
+        "name"
+      ],
+      "title": "ClientConfig",
+      "type": "object"
+    },
+    "ColumnConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/DataType"
+        },
+        "nullable": {
+          "default": true,
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification",
+          "default": "internal"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "title": "ColumnConfig",
+      "type": "object"
+    },
+    "DataType": {
+      "enum": [
+        "string",
+        "integer",
+        "float",
+        "boolean",
+        "date",
+        "datetime",
+        "json"
+      ],
+      "title": "DataType",
+      "type": "string"
+    },
+    "DatasetConfig": {
+      "additionalProperties": false,
+      "description": "Logical dataset processed by DataForge.",
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "source_object": {
+          "$ref": "#/$defs/SourceObjectConfig"
+        },
+        "owner": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Owner"
+        },
+        "classification": {
+          "$ref": "#/$defs/Classification",
+          "default": "internal"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "schema": {
+          "items": {
+            "$ref": "#/$defs/ColumnConfig"
+          },
+          "minItems": 1,
+          "title": "Schema",
+          "type": "array"
+        },
+        "keys": {
+          "$ref": "#/$defs/DatasetKeysConfig"
+        },
+        "silver": {
+          "$ref": "#/$defs/SilverConfig"
+        },
+        "quality": {
+          "$ref": "#/$defs/QualityConfig"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "source_object",
+        "schema"
+      ],
+      "title": "DatasetConfig",
+      "type": "object"
+    },
+    "DatasetKeysConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "primary": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Primary",
+          "type": "array"
+        },
+        "foreign": {
+          "items": {
+            "$ref": "#/$defs/ForeignKeyConfig"
+          },
+          "title": "Foreign",
+          "type": "array"
+        }
+      },
+      "title": "DatasetKeysConfig",
+      "type": "object"
+    },
+    "DatasetReferenceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset": {
+          "minLength": 1,
+          "title": "Dataset",
+          "type": "string"
+        },
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Columns",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dataset",
+        "columns"
+      ],
+      "title": "DatasetReferenceConfig",
+      "type": "object"
+    },
+    "DerivedOperation": {
+      "enum": [
+        "add",
+        "subtract",
+        "multiply",
+        "divide"
+      ],
+      "title": "DerivedOperation",
+      "type": "string"
+    },
+    "FileFormat": {
+      "enum": [
+        "csv",
+        "json",
+        "parquet"
+      ],
+      "title": "FileFormat",
+      "type": "string"
+    },
+    "FilterOperator": {
+      "enum": [
+        "eq",
+        "ne",
+        "gt",
+        "ge",
+        "lt",
+        "le",
+        "in",
+        "not_in"
+      ],
+      "title": "FilterOperator",
+      "type": "string"
+    },
+    "ForeignKeyConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Columns",
+          "type": "array"
+        },
+        "references": {
+          "$ref": "#/$defs/DatasetReferenceConfig"
+        }
+      },
+      "required": [
+        "columns",
+        "references"
+      ],
+      "title": "ForeignKeyConfig",
+      "type": "object"
+    },
+    "GoldConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "base_dataset": {
+          "minLength": 1,
+          "title": "Base Dataset",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "plan": {
+          "items": {
+            "$ref": "#/$defs/GoldStepConfig"
+          },
+          "title": "Plan",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "base_dataset"
+      ],
+      "title": "GoldConfig",
+      "type": "object"
+    },
+    "GoldOperation": {
+      "enum": [
+        "select",
+        "drop",
+        "rename",
+        "filter",
+        "join",
+        "derive",
+        "group_by",
+        "aggregate"
+      ],
+      "title": "GoldOperation",
+      "type": "string"
+    },
+    "GoldStepConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/GoldOperation"
+        },
+        "columns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Columns"
+        },
+        "column": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        },
+        "operator": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FilterOperator"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "right_dataset": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Right Dataset"
+        },
+        "left_on": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Left On"
+        },
+        "right_on": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Right On"
+        },
+        "how": {
+          "$ref": "#/$defs/JoinHow",
+          "default": "inner"
+        },
+        "derived_operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DerivedOperation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operands": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operands"
+        },
+        "output_column": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Column"
+        },
+        "aggregations": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/AggregationConfig"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aggregations"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "GoldStepConfig",
+      "type": "object"
+    },
+    "JoinHow": {
+      "enum": [
+        "inner",
+        "left",
+        "right",
+        "outer"
+      ],
+      "title": "JoinHow",
+      "type": "string"
+    },
+    "ProjectConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "code",
+        "name"
+      ],
+      "title": "ProjectConfig",
+      "type": "object"
+    },
+    "QualityConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "rules": {
+          "items": {
+            "$ref": "#/$defs/QualityRuleConfig"
+          },
+          "title": "Rules",
+          "type": "array"
+        }
+      },
+      "title": "QualityConfig",
+      "type": "object"
+    },
+    "QualityRuleConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "rule": {
+          "$ref": "#/$defs/QualityRuleType"
+        },
+        "column": {
+          "minLength": 1,
+          "title": "Column",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/Severity",
+          "default": "critical"
+        },
+        "mostly": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Mostly",
+          "type": "number"
+        },
+        "allow_null": {
+          "default": true,
+          "title": "Allow Null",
+          "type": "boolean"
+        },
+        "value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Value"
+        },
+        "min_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Value"
+        },
+        "max_value": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Value"
+        },
+        "values": {
+          "anyOf": [
+            {
+              "items": {},
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Values"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        }
+      },
+      "required": [
+        "name",
+        "rule",
+        "column"
+      ],
+      "title": "QualityRuleConfig",
+      "type": "object"
+    },
+    "QualityRuleType": {
+      "enum": [
+        "not_null",
+        "unique",
+        "greater_than",
+        "greater_than_or_equal",
+        "less_than",
+        "less_than_or_equal",
+        "between",
+        "allowed_values",
+        "regex"
+      ],
+      "title": "QualityRuleType",
+      "type": "string"
+    },
+    "RestPaginationConfig": {
+      "additionalProperties": false,
+      "description": "Supported REST pagination strategies.",
+      "properties": {
+        "strategy": {
+          "$ref": "#/$defs/RestPaginationStrategy",
+          "default": "none"
+        },
+        "page_param": {
+          "default": "page",
+          "title": "Page Param",
+          "type": "string"
+        },
+        "page_size_param": {
+          "default": "page_size",
+          "title": "Page Size Param",
+          "type": "string"
+        },
+        "page_size": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Page Size",
+          "type": "integer"
+        },
+        "start_page": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Start Page",
+          "type": "integer"
+        },
+        "offset_param": {
+          "default": "offset",
+          "title": "Offset Param",
+          "type": "string"
+        },
+        "limit_param": {
+          "default": "limit",
+          "title": "Limit Param",
+          "type": "string"
+        },
+        "start_offset": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Start Offset",
+          "type": "integer"
+        },
+        "max_pages": {
+          "default": 100,
+          "minimum": 1,
+          "title": "Max Pages",
+          "type": "integer"
+        }
+      },
+      "title": "RestPaginationConfig",
+      "type": "object"
+    },
+    "RestPaginationStrategy": {
+      "enum": [
+        "none",
+        "page",
+        "offset"
+      ],
+      "title": "RestPaginationStrategy",
+      "type": "string"
+    },
+    "Severity": {
+      "enum": [
+        "warning",
+        "critical"
+      ],
+      "title": "Severity",
+      "type": "string"
+    },
+    "SilverConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "transformations": {
+          "items": {
+            "$ref": "#/$defs/TransformationConfig"
+          },
+          "title": "Transformations",
+          "type": "array"
+        }
+      },
+      "title": "SilverConfig",
+      "type": "object"
+    },
+    "SourceConfig": {
+      "additionalProperties": false,
+      "description": "Source identity and connection reference.",
+      "properties": {
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "type": {
+          "$ref": "#/$defs/SourceType"
+        },
+        "connection_reference": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Connection Reference"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "type"
+      ],
+      "title": "SourceConfig",
+      "type": "object"
+    },
+    "SourceObjectConfig": {
+      "additionalProperties": false,
+      "description": "Physical object inside a configured source.",
+      "properties": {
+        "path": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FileFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "table": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Table"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "endpoint": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endpoint"
+        },
+        "method": {
+          "const": "GET",
+          "default": "GET",
+          "title": "Method",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": true,
+          "title": "Params",
+          "type": "object"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "timeout_seconds": {
+          "default": 30.0,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "records_path": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Records Path"
+        },
+        "pagination": {
+          "$ref": "#/$defs/RestPaginationConfig"
+        }
+      },
+      "title": "SourceObjectConfig",
+      "type": "object"
+    },
+    "SourceType": {
+      "enum": [
+        "file",
+        "postgresql",
+        "rest"
+      ],
+      "title": "SourceType",
+      "type": "string"
+    },
+    "TransformationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "$ref": "#/$defs/TransformationOperation"
+        },
+        "column": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DataType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "from": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From"
+        },
+        "to": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "TransformationConfig",
+      "type": "object"
+    },
+    "TransformationOperation": {
+      "enum": [
+        "cast",
+        "trim",
+        "lower",
+        "upper",
+        "rename"
+      ],
+      "title": "TransformationOperation",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Root configuration contract for one DataForge project/source.",
+  "properties": {
+    "contract_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "client": {
+      "$ref": "#/$defs/ClientConfig"
+    },
+    "project": {
+      "$ref": "#/$defs/ProjectConfig"
+    },
+    "source": {
+      "$ref": "#/$defs/SourceConfig"
+    },
+    "datasets": {
+      "items": {
+        "$ref": "#/$defs/DatasetConfig"
+      },
+      "minItems": 1,
+      "title": "Datasets",
+      "type": "array"
+    },
+    "gold": {
+      "items": {
+        "$ref": "#/$defs/GoldConfig"
+      },
+      "title": "Gold",
+      "type": "array"
+    }
+  },
+  "required": [
+    "client",
+    "project",
+    "source",
+    "datasets"
+  ],
+  "title": "DataForgeContract",
+  "type": "object"
+}

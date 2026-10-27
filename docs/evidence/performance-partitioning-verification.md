@@ -84,3 +84,6 @@ The observed execution time was:
 
 ```text
 Execution Time: 3.752 ms
+```
+
+Current delivery: this temporary Parquet experiment is supplementary. The two applied PostgreSQL optimizations and comparable SQL measurements are documented in [metadata-performance-verification.md](metadata-performance-verification.md).
