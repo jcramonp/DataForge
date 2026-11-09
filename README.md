@@ -21,7 +21,9 @@ has a verified AWS Academy deployment using Terraform, EC2, private RDS PostgreS
 and S3. See the [AWS deployment guide](docs/operations/aws-academy.md) and
 [live verification evidence](docs/evidence/aws-academy-verification.md).
 Access currently uses an SSM tunnel; a public application URL, automated cloud
-deployment, alerting and the cloud Copilot connection remain pending.
+deployment and the cloud Copilot connection remain pending. Infrastructure alarms
+and email notifications are [implemented and verified](docs/evidence/aws-monitoring-verification.md);
+application health monitoring remains pending.
 
 ## Project Context
 

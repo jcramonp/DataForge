@@ -36,6 +36,9 @@ with `aws sts get-caller-identity`; never commit those temporary credentials.
 The Academy role must permit EC2, VPC, RDS managed secrets, S3 and SSM operations.
 `LabInstanceProfile` must already exist. Terraform does not create IAM roles.
 
+First create the private notification variable file described in the
+[monitoring runbook](aws-monitoring.md). It supplies the required alert_email.
+
 Use Terraform 1.12.2 or later below 2.0, AWS CLI, Bash and Docker Compose 2.30+
 (the bootstrap installs Compose 2.32.4). Run Terraform from Bash/CloudShell:
 
@@ -44,7 +47,8 @@ cd infra/academy
 terraform init -lockfile=readonly
 terraform fmt -check
 terraform validate
-terraform plan -var='operator_cidr=192.0.2.1/32' -out=deploy.tfplan
+terraform plan -var='operator_cidr=192.0.2.1/32' \
+  -var-file="$HOME/dataforge-alerts.tfvars.json" -out=deploy.tfplan
 terraform apply deploy.tfplan
 terraform output
 ```
@@ -173,8 +177,9 @@ charges. Destruction skips an RDS final snapshot and the EC2 root disk is delete
 on termination, so back up required data before any teardown. Do not destroy the
 verified environment to test this guide before the demonstration.
 
-This change versions the verified deployment. CI/CD automatic deployment, alert
-configuration, a public authenticated URL, cloud Copilot access, a complete demo
+This change versions the verified deployment. Infrastructure alarms and email delivery are verified in the
+[monitoring evidence](../evidence/aws-monitoring-verification.md). CI/CD automatic
+deployment, application health monitoring, a public authenticated URL, cloud Copilot access, a complete demo
 contract export and the final report remain separate pending work. This guide
 has not been re-executed from an empty account; evidence records the actual
 manual deployment and live checks already performed.

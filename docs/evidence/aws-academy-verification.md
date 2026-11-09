@@ -66,5 +66,6 @@ VERIFICACION CORRECTA: 8 usuarios, 20 tareas cada uno, total 160.
 ```
 
 This verifies the materialized Gold file. It does not demonstrate a separate
-business-facing consumption API/dashboard, automatic deployment, alert delivery
-or Bedrock access from Academy. Those remain pending.
+business-facing consumption API/dashboard, automatic deployment or Bedrock access
+from Academy. Those remain pending. Infrastructure alert delivery was subsequently
+verified separately in [monitoring evidence](aws-monitoring-verification.md).
