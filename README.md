@@ -20,14 +20,30 @@ The Sprint 2 baseline runs on local Docker Compose. The final delivery now also
 has a verified AWS Academy deployment using Terraform, EC2, private RDS PostgreSQL
 and S3. See the [AWS deployment guide](docs/operations/aws-academy.md) and
 [live verification evidence](docs/evidence/aws-academy-verification.md).
-Access currently uses an SSM tunnel; a public application URL, automated cloud
-deployment and the cloud Copilot connection remain pending. Infrastructure alarms
-and email notifications are [implemented and verified](docs/evidence/aws-monitoring-verification.md);
-application health monitoring remains pending.
+Access currently uses an SSM tunnel. Groq Copilot is
+[verified live](docs/evidence/aws-groq-verification.md), as are
+[Gold consumption](docs/evidence/aws-gold-consumption-verification.md),
+[infrastructure alerts](docs/evidence/aws-monitoring-verification.md) and
+[application/pipeline monitoring](docs/evidence/aws-application-monitor-verification.md).
+See the [final delivery checklist](docs/operations/final-delivery-checklist.md)
+and [cost assumptions](docs/operations/aws-costs.md). Automated cloud deployment
+and fresh-environment AWS reproduction remain pending. Hosted CI has not passed
+for this delivery; the account billing lock was previously shown and no support
+resolution has been reported. The application currently has no public URL.
 
 ## Project Context
 
-DataForge is developed as a modular data engineering solution for **AI Solutions LATAM**, a consulting company delivering data engineering, advanced analytics, and machine learning projects across diverse client environments.
+DataForge is an academic data engineering prototype developed for SI4002 at
+Universidad EAFIT. **AI Solutions LATAM is a fictional consulting-company scenario**,
+not a real client or organization that commissioned or adopted the system.
+
+The scenario motivates reusable ingestion and quality processing across clients.
+Its intended users are data engineers operating pipelines, data stewards reviewing
+quality/lineage, and analysts consuming validated Gold datasets. These are design
+roles, not evidence of interviews, adoption or production use. The Olist pilot
+and the REST tasks demonstration are validation fixtures; the latter validates
+technical behavior rather than a real company's business KPI. No measured
+commercial savings or business impact is claimed.
 
 The platform addresses a core operational bottleneck: each new client provides data in different formats (CSV, PostgreSQL, REST APIs) with custom schemas and quality criteria, forcing teams to write repetitive, ad-hoc pipelines. DataForge standardizes and automates this lifecycle using **declarative contracts**, generic connectors, automated quality gates with quarantine routing, and a modern control-plane web interface.
 
