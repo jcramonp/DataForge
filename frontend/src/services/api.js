@@ -239,6 +239,10 @@ export async function fetchAssets(filters = {}) {
   );
 }
 
+export async function fetchGoldPreview(assetId) {
+  return requestJson(`/assets/${encodeURIComponent(assetId)}/gold-preview?limit=100`);
+}
+
 
 export async function fetchLineage(filters = {}) {
   return requestJson(

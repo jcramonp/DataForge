@@ -1,0 +1,29 @@
+{
+  "src/api/main.py": {
+    "new_hash": "547857f95fba36c378703f8b4c048181cd053c6aadda42d6c3fa7daa3f52a050",
+    "accepted_hashes": [
+      "547857f95fba36c378703f8b4c048181cd053c6aadda42d6c3fa7daa3f52a050",
+      "2408980e21ecbf02b21f74aae75b0c796f07a62d570c57d57c99e06d65a99464"
+    ]
+  },
+  "src/api/gold_preview.py": {
+    "new_hash": "114fd565da35fb6489ca5993ff5ea0052ad489aa717d81be42403841a93c8a4a",
+    "accepted_hashes": [
+      "114fd565da35fb6489ca5993ff5ea0052ad489aa717d81be42403841a93c8a4a"
+    ]
+  },
+  "frontend/src/views/AssetsView.jsx": {
+    "new_hash": "7c71ac115b37e82c4864648894e1c7d92b49eab84b3fa6e509bac179f101262c",
+    "accepted_hashes": [
+      "7c71ac115b37e82c4864648894e1c7d92b49eab84b3fa6e509bac179f101262c",
+      "d551d8c4d14e69b49824ed88b12c9ec62d21248c645865732888a973e650b023"
+    ]
+  },
+  "frontend/src/services/api.js": {
+    "new_hash": "d2f021de00e294d604e01249ba0f5bf0567c3adf2b3571147f7e500d57f2e06d",
+    "accepted_hashes": [
+      "d2f021de00e294d604e01249ba0f5bf0567c3adf2b3571147f7e500d57f2e06d",
+      "e99df53a80bf391a5a9f302acef452102114bf5174cebc535f4f325e4027eec4"
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchAssets, fetchOverview, fetchDatasetProfiling, fetchRuns, triggerPipeline} from '../src/services/api.js';
+import {fetchAssets, fetchGoldPreview, fetchOverview, fetchDatasetProfiling, fetchRuns, triggerPipeline} from '../src/services/api.js';
 import {sourceKey, sourceScope, datasetScope, matchesSource} from '../src/services/scope.js';
 
 const scope = {client_code:'retail', project_code:'p', source_code:'orders'};
@@ -33,6 +33,16 @@ test('profiling encodes dataset names and disambiguates sources', async () => {
   for (const [key,value] of Object.entries(scope)) {
     assert.equal(new URL(call().url, 'http://localhost').searchParams.get(key), value);
   }
+});
+
+test('Gold consumption uses registered identity and surfaces storage errors', async () => {
+  const call = capture({asset_id:8, rows:[{userId:1, total_tareas:20}]});
+  const result = await fetchGoldPreview(8);
+  assert.equal(call().url, '/api/assets/8/gold-preview?limit=100');
+  assert.equal(result.rows[0].total_tareas, 20);
+  globalThis.fetch = async () => new Response(JSON.stringify({detail:'Gold data unavailable'}),
+    {status:503, headers:{'Content-Type':'application/json'}});
+  await assert.rejects(fetchGoldPreview(8), /Gold data unavailable/);
 });
 
 test('run history uses selected source and server-side limit', async () => {
