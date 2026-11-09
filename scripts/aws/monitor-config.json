@@ -1,0 +1,4 @@
+{
+  "region": "us-east-1",
+  "topic_arn": "arn:aws:sns:us-east-1:919774751018:dataforge-academy-alerts"
+}

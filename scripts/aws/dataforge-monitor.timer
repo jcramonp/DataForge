@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically check DataForge readiness and run history
+
+[Timer]
+OnBootSec=90
+OnUnitInactiveSec=60
+AccuracySec=5
+Unit=dataforge-monitor.service
+
+[Install]
+WantedBy=timers.target
