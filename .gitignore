@@ -46,3 +46,12 @@ frontend/dist/
 skills-lock.json
 
 reports/profiling/
+
+# AWS runtime secrets and local Terraform state
+.internal-secrets.json
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+

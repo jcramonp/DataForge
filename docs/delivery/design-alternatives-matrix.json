@@ -1,0 +1,85 @@
+{
+  "date": "2026-11-09",
+  "status": "retrospective proposed engineering judgments for team review",
+  "scale_min": 1,
+  "scale_max": 5,
+  "unknown_cost_and_environment_scores_are_neutral_not_measured": true,
+  "formula": "sum(weight_percent * score / 100)",
+  "weights": {
+    "technical": 30,
+    "economic": 25,
+    "environmental": 10,
+    "social": 10,
+    "safety": 15,
+    "global": 10
+  },
+  "scores": {
+    "A": {
+      "technical": 2,
+      "economic": 3,
+      "environmental": 3,
+      "social": 2,
+      "safety": 3,
+      "global": 4
+    },
+    "B": {
+      "technical": 4,
+      "economic": 3,
+      "environmental": 3,
+      "social": 4,
+      "safety": 3,
+      "global": 4
+    },
+    "C": {
+      "technical": 4,
+      "economic": 3,
+      "environmental": 3,
+      "social": 3,
+      "safety": 4,
+      "global": 2
+    }
+  },
+  "cases": {
+    "base": {
+      "technical": 30,
+      "economic": 25,
+      "environmental": 10,
+      "social": 10,
+      "safety": 15,
+      "global": 10
+    },
+    "security_priority": {
+      "technical": 30,
+      "economic": 25,
+      "environmental": 10,
+      "social": 10,
+      "safety": 25,
+      "global": 0
+    },
+    "portability_priority": {
+      "technical": 30,
+      "economic": 25,
+      "environmental": 10,
+      "social": 10,
+      "safety": 5,
+      "global": 20
+    }
+  },
+  "totals": {
+    "base": {
+      "A": 2.7,
+      "B": 3.5,
+      "C": 3.35
+    },
+    "security_priority": {
+      "A": 2.6,
+      "B": 3.4,
+      "C": 3.55
+    },
+    "portability_priority": {
+      "A": 2.8,
+      "B": 3.6,
+      "C": 3.15
+    }
+  }
+}

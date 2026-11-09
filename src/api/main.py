@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from src.copilot.service import (
-    SuggestRequest, ApproveRequest, ProviderUnavailable, ProposalRejected, propose, seal, unseal,
+    SuggestRequest, ApproveRequest, ProviderUnavailable, ProposalRejected, configured_provider_name, propose, seal, unseal,
 )
 from src.api.control_plane import contract_hash
 
@@ -55,6 +55,7 @@ from src.connectors import (
     get_connector,
 )
 from src.api.quarantine import build_quarantine_records
+from src.api.gold_preview import GoldPreviewError, lookup_asset, read_gold_preview
 from src.governance.certification import (
     CertificationCriteriaError,
     CertificationNotFoundError,
@@ -1350,6 +1351,29 @@ def get_assets(
         ) from exc
 
 
+@app.get("/api/assets/{asset_id}/gold-preview", summary="Read registered Gold data")
+def get_gold_preview(asset_id: int, response: Response, limit: int = 100):
+    """Read-only consumption preview; never accept caller-supplied storage URIs."""
+    response.headers["Cache-Control"] = "no-store"
+    if asset_id < 1 or not 1 <= limit <= 100:
+        raise HTTPException(422, "asset_id must be positive and limit between 1 and 100")
+    try:
+        with connect_postgres() as conn:
+            asset = lookup_asset(conn, asset_id)
+        if asset is None:
+            raise HTTPException(404, "Asset not found")
+        if asset["layer"] != "gold" or asset["format"] != "parquet":
+            raise HTTPException(422, "Only Gold Parquet assets support this view.")
+        return read_gold_preview(asset, create_s3_client(), get_settings().storage.bucket("gold"), limit)
+    except HTTPException:
+        raise
+    except GoldPreviewError as exc:
+        raise HTTPException(409, str(exc)) from None
+    except Exception as exc:
+        logger.warning("Gold preview unavailable", extra={"asset_id": asset_id, "error_type": type(exc).__name__})
+        raise HTTPException(503, "Gold data unavailable; check database and object storage.") from None
+
+
 @app.get(
     "/api/lineage",
     summary="Get persisted asset lineage graph",
@@ -1693,7 +1717,7 @@ def suggest_rules(payload: SuggestRequest):
             'proposal': proposal.model_dump(mode='json', by_alias=True),
             'contract': contract.model_dump(mode='json', by_alias=True),
             'token': seal(contract, base), 'mode': payload.mode,
-            'provider': 'bedrock' if payload.mode == 'llm' else 'deterministic',
+            'provider': configured_provider_name() if payload.mode == 'llm' else 'deterministic',
             'profile_id': profile.get('profile_id') if profile else None,
             'approval_required': True,
         }
@@ -1726,3 +1750,4 @@ def approve_copilot(payload: ApproveRequest):
         raise HTTPException(422, "Invalid or expired proposal; generate and review again") from exc
     except psycopg.Error as exc:
         raise HTTPException(503, "Control-plane database unavailable") from exc
+

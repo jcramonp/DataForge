@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { fetchAssets } from '../services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { fetchAssets, fetchGoldPreview } from '../services/api';
 import { Copy, Check } from 'lucide-react';
 
 export default function AssetsView({ scope = {} }) {
@@ -10,19 +10,42 @@ export default function AssetsView({ scope = {} }) {
   const [error, setError] = useState(null);
   const [limit, setLimit] = useState(100);
   const [refresh, setRefresh] = useState(0);
+  const [preview, setPreview] = useState(null);
+  const [previewError, setPreviewError] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const previewRequest = useRef(0);
   const scopeKey = JSON.stringify(scope);
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     setAssets([]);
+    previewRequest.current += 1;
+    setPreview(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
     fetchAssets({ ...scope, limit, layer: filterLayer === 'all' ? undefined : filterLayer })
       .then((rows) => { if (!cancelled) setAssets(rows); })
       .catch((err) => { if (!cancelled) setError(err.message); })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; previewRequest.current += 1; };
   }, [scopeKey, filterLayer, limit, refresh]);
   const filtered = assets;
+
+  const showGold = async (asset) => {
+    const request = ++previewRequest.current;
+    setPreview(null);
+    setPreviewError(null);
+    setPreviewLoading(true);
+    try {
+      const result = await fetchGoldPreview(asset.asset_id);
+      if (request === previewRequest.current) setPreview(result);
+    } catch (err) {
+      if (request === previewRequest.current) setPreviewError(err.message);
+    } finally {
+      if (request === previewRequest.current) setPreviewLoading(false);
+    }
+  };
 
   const handleCopy = async (uri, id) => {
     try {
@@ -90,7 +113,9 @@ export default function AssetsView({ scope = {} }) {
               {!loading && !error && assets.length === 0 && <tr><td colSpan={7}>No persisted assets in this scope.</td></tr>}
               {filtered.map((asset) => (
                 <tr key={asset.asset_id}>
-                  <td><strong>{asset.asset_name}</strong><div className="mono">#{asset.asset_id} · {asset.client_code}/{asset.project_code}/{asset.source_code}/{asset.dataset_code}</div></td>
+                  <td><strong>{asset.asset_name}</strong><div className="mono">#{asset.asset_id} · {asset.client_code}/{asset.project_code}/{asset.source_code}/{asset.dataset_code}</div>
+                    {asset.layer === 'gold' && asset.format === 'parquet' && <button className="btn btn-secondary btn-sm" onClick={() => showGold(asset)}>View Gold data #{asset.asset_id}</button>}
+                  </td>
                   <td>{getLayerBadge(asset.layer)}</td>
                   <td><span className="badge badge-neutral mono">{asset.format}</span></td>
                   <td className="tabular-nums">{asset.row_count == null ? '—' : asset.row_count.toLocaleString()}</td>
@@ -118,6 +143,21 @@ export default function AssetsView({ scope = {} }) {
           </table>
         </div>
       </div>
+      {(previewLoading || previewError || preview) && <section className="card" aria-label="Gold data consumption" style={{ marginTop: '20px' }}>
+        <h3 className="card-title">Gold data consumption</h3>
+        {previewLoading && <p role="status">Reading Gold data from object storage…</p>}
+        {previewError && <p role="alert">{previewError}</p>}
+        {preview && <>
+          <p><strong>{preview.asset_name}</strong> · Asset #{preview.asset_id} · {preview.returned_rows} of {preview.total_rows} rows · SHA-256 verified</p>
+          <p className="mono" style={{ overflowWrap: 'anywhere' }}>{preview.storage_uri}</p>
+          {preview.truncated && <p>Preview limited to the first 100 rows.</p>}
+          <div className="table-container"><table className="data-table">
+            <thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
+            <tbody>{preview.rows.map((row, index) => <tr key={index}>{preview.columns.map((column) => <td key={column}>{row[column] == null ? '—' : typeof row[column] === 'object' ? JSON.stringify(row[column]) : String(row[column])}</td>)}</tr>)}</tbody>
+          </table></div>
+          {preview.returned_rows === 0 && <p>This Gold asset contains no rows.</p>}
+        </>}
+      </section>}
     </div>
   );
 }

@@ -1,0 +1,18 @@
+[Unit]
+Description=DataForge application and persisted run monitor
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/dataforge-monitor.py
+StateDirectory=dataforge-monitor
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+TimeoutStartSec=150
+Environment=AWS_PAGER=
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
