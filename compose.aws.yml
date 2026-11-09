@@ -1,0 +1,100 @@
+x-dataforge: &dataforge
+  env_file:
+    - path: .env.aws
+      format: raw
+  logging:
+    driver: local
+
+x-airflow: &airflow
+  <<: *dataforge
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+  image: dataforge-airflow:academy
+  environment:
+    PYTHONPATH: /opt/dataforge
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__PARALLELISM: "2"
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/auth/passwords.json
+  volumes:
+    - ./:/opt/dataforge:ro
+    - ./airflow/dags:/opt/airflow/dags:ro
+    - airflow_logs:/opt/airflow/logs
+
+services:
+  airflow-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: airflow
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_DB_PASSWORD:?Set AIRFLOW_DB_PASSWORD}
+    volumes:
+      - airflow_database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD, pg_isready, -U, airflow, -d, airflow]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  migrate:
+    <<: *dataforge
+    build: .
+    image: dataforge-api:academy
+    command: [python, -m, src.ops.migrate]
+  airflow-init:
+    <<: *airflow
+    command: [db, migrate]
+    depends_on:
+      airflow-db:
+        condition: service_healthy
+  airflow-api-server:
+    <<: *airflow
+    restart: unless-stopped
+    command: [bash, -c, "python /opt/dataforge/airflow/write_auth_file.py && exec airflow api-server --workers 1"]
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+  airflow-scheduler:
+    <<: *airflow
+    restart: unless-stopped
+    command: [scheduler]
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-api-server:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+  airflow-dag-processor:
+    <<: *airflow
+    restart: unless-stopped
+    command: [dag-processor]
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+  api:
+    <<: *dataforge
+    build: .
+    image: dataforge-api:academy
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+  web:
+    build:
+      context: frontend
+      dockerfile: Dockerfile.aws
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  airflow_database:
+  airflow_logs:
+

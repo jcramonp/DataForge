@@ -16,9 +16,12 @@ It links the [current architecture](docs/sprint-2/architecture.md),
 and [live-demo script](docs/delivery/sprint2-demo-script.md).
 The PDF presentation is in `docs/delivery/dataforge-sprint2.pdf`.
 
-The implemented infrastructure is **local Docker Compose**. AWS is a reference
-architecture; a deployed AWS environment is not claimed. Final-Sprint DataOps
-and downstream consumption are outside the required Sprint 2 delivery.
+The Sprint 2 baseline runs on local Docker Compose. The final delivery now also
+has a verified AWS Academy deployment using Terraform, EC2, private RDS PostgreSQL
+and S3. See the [AWS deployment guide](docs/operations/aws-academy.md) and
+[live verification evidence](docs/evidence/aws-academy-verification.md).
+Access currently uses an SSM tunnel; a public application URL, automated cloud
+deployment, alerting and the cloud Copilot connection remain pending.
 
 ## Project Context
 
@@ -235,3 +238,4 @@ Integration tests against real PostgreSQL and MinIO (migrations plus an end-to-e
 
 **SI4002 — Proyecto de Ingeniería de Datos**  
 Universidad EAFIT
+
