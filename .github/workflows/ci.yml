@@ -149,6 +149,16 @@ jobs:
           docker compose --profile api config --quiet
       - name: Build API image
         run: docker build -t dataforge-api:ci .
+      - name: Verify web artifact identity across cached builds
+        run: |
+          mkdir -p frontend/public
+          printf '{"revision":"stale-source-marker"}\n' > frontend/public/release.json
+          for revision in 1111111111111111111111111111111111111111 "$DATAFORGE_REVISION"; do
+            docker build -f frontend/Dockerfile.aws --build-arg "VITE_APP_REVISION=$revision" -t dataforge-web:revision-ci frontend
+            metadata=$(docker run --rm --network none --entrypoint cat dataforge-web:revision-ci /usr/share/nginx/html/release.json)
+            python -c 'import json,sys; actual=json.loads(sys.argv[2])["revision"]; print("expected="+sys.argv[1]+" observed="+actual); sys.exit(0 if actual==sys.argv[1] else 1)' "$revision" "$metadata"
+            docker run --rm --network none --entrypoint sh dataforge-web:revision-ci -c 'grep -R -F -q "$1" /usr/share/nginx/html/assets' sh "$revision"
+          done
       - name: Smoke test API container liveness
         run: |
           docker run -d --name api -p 8000:8000 -e DATAFORGE_ENV=test dataforge-api:ci

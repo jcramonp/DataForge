@@ -10,5 +10,7 @@ RUN npm run build
 FROM nginx:alpine
 COPY nginx.aws.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /build/dist/ /usr/share/nginx/html/
-
-
+# Materialize release identity in the final image, independent of public/dist leftovers.
+ARG VITE_APP_REVISION=development
+LABEL org.opencontainers.image.revision=$VITE_APP_REVISION
+RUN printf '{"revision":"%s"}\n' "$VITE_APP_REVISION" > /usr/share/nginx/html/release.json
