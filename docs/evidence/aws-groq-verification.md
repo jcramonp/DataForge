@@ -35,7 +35,9 @@ The latest S3-backed Parquet assets registered in the catalog were:
 
 This verifies real Groq proposal generation, server validation, explicit human
 approval, persisted configuration and downstream execution. These counts are
-observed catalog results; a new direct read of Gold #8 through the consumption
-endpoint remains pending. Bedrock remains unavailable to the tested Academy role;
+observed catalog results. Gold #8 was subsequently read through the consumption
+API and web view, with verified checksum and eight users with 20 tasks each;
+see [Gold consumption evidence](aws-gold-consumption-verification.md).
+Bedrock remains unavailable to the tested Academy role;
 Groq is an external provider, not an AWS Bedrock deployment. GitHub-hosted CI is
 still blocked by the separate account billing issue.

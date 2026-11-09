@@ -8,7 +8,9 @@ The viewer does not mutate data, execute a pipeline or change certification.
 The intended user is a data analyst checking an aggregated data product. For
 the Academy tasks demo, `userId` identifies the accepted user and `total_tareas`
 counts accepted tasks. After the verified demo run, the expected result is
-eight users (1–8), each with 20 tasks, total 160. Live UI validation is pending.
+eight users (1–8), each with 20 tasks, total 160. Both API and web UI were
+verified live on 2026-11-09; see
+[the observed response and screenshot](../evidence/aws-gold-consumption-verification.md).
 
 Example request through the existing SSM tunnel (PowerShell):
 

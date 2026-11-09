@@ -1,0 +1,187 @@
+{
+  "contract_version": "1.0",
+  "client": {
+    "code": "demo-aws",
+    "name": "Demo AWS",
+    "description": null
+  },
+  "project": {
+    "code": "entrega-final",
+    "name": "Entrega final DataForge",
+    "description": null
+  },
+  "source": {
+    "code": "tareas-rest",
+    "name": "API REST de tareas",
+    "type": "rest",
+    "connection_reference": null,
+    "description": null
+  },
+  "datasets": [
+    {
+      "code": "tareas",
+      "name": "Tareas por usuario",
+      "source_object": {
+        "path": null,
+        "format": null,
+        "schema": null,
+        "table": null,
+        "query": null,
+        "endpoint": "https://jsonplaceholder.typicode.com/todos",
+        "method": "GET",
+        "params": {},
+        "headers": {},
+        "timeout_seconds": 30.0,
+        "records_path": null,
+        "pagination": {
+          "strategy": "none",
+          "page_param": "page",
+          "page_size_param": "page_size",
+          "page_size": 100,
+          "start_page": 1,
+          "offset_param": "offset",
+          "limit_param": "limit",
+          "start_offset": 0,
+          "max_pages": 100
+        }
+      },
+      "owner": "Equipo DataForge",
+      "classification": "public",
+      "description": null,
+      "schema": [
+        {
+          "name": "userId",
+          "type": "integer",
+          "nullable": false,
+          "description": null,
+          "classification": "internal"
+        },
+        {
+          "name": "id",
+          "type": "integer",
+          "nullable": false,
+          "description": null,
+          "classification": "internal"
+        },
+        {
+          "name": "title",
+          "type": "string",
+          "nullable": false,
+          "description": null,
+          "classification": "internal"
+        },
+        {
+          "name": "completed",
+          "type": "boolean",
+          "nullable": false,
+          "description": null,
+          "classification": "internal"
+        }
+      ],
+      "keys": {
+        "primary": [
+          "id"
+        ],
+        "foreign": []
+      },
+      "silver": {
+        "transformations": []
+      },
+      "quality": {
+        "rules": [
+          {
+            "name": "demo_user_id_limit",
+            "rule": "less_than_or_equal",
+            "column": "userId",
+            "severity": "critical",
+            "mostly": 1.0,
+            "allow_null": false,
+            "value": 8,
+            "min_value": null,
+            "max_value": null,
+            "values": null,
+            "pattern": null
+          },
+          {
+            "name": "titulo_presente",
+            "rule": "not_null",
+            "column": "title",
+            "severity": "warning",
+            "mostly": 1.0,
+            "allow_null": false,
+            "value": null,
+            "min_value": null,
+            "max_value": null,
+            "values": null,
+            "pattern": null
+          },
+          {
+            "name": "groq_demo_id_max_200_v2",
+            "rule": "less_than_or_equal",
+            "column": "id",
+            "severity": "warning",
+            "mostly": 1.0,
+            "allow_null": false,
+            "value": 200,
+            "min_value": null,
+            "max_value": null,
+            "values": null,
+            "pattern": null
+          }
+        ]
+      }
+    }
+  ],
+  "gold": [
+    {
+      "code": "tareas_por_usuario",
+      "name": "Cantidad de tareas por usuario",
+      "base_dataset": "tareas",
+      "enabled": true,
+      "plan": [
+        {
+          "operation": "group_by",
+          "columns": [
+            "userId"
+          ],
+          "column": null,
+          "from": null,
+          "to": null,
+          "operator": null,
+          "value": null,
+          "right_dataset": null,
+          "left_on": null,
+          "right_on": null,
+          "how": "inner",
+          "derived_operation": null,
+          "operands": null,
+          "output_column": null,
+          "aggregations": null
+        },
+        {
+          "operation": "aggregate",
+          "columns": null,
+          "column": null,
+          "from": null,
+          "to": null,
+          "operator": null,
+          "value": null,
+          "right_dataset": null,
+          "left_on": null,
+          "right_on": null,
+          "how": "inner",
+          "derived_operation": null,
+          "operands": null,
+          "output_column": null,
+          "aggregations": [
+            {
+              "column": "id",
+              "function": "count",
+              "alias": "total_tareas"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
