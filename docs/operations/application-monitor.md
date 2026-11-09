@@ -32,7 +32,9 @@ verify its archive SHA-256, extract into a private root-owned staging directory
 and run `bash install.sh` as root. Installation verifies member hashes, backs up
 previous monitor files under `/opt/dataforge-deploy-backups`, installs the script,
 config and units, enables the timer and runs an initial check. It does not rebuild
-or restart application containers. Live installation/monitor behavior is pending.
+or restart application containers. Installation, controlled web-outage/recovery
+emails and a new persisted failed-run email were verified live; see
+[observed monitor evidence](../evidence/aws-application-monitor-verification.md).
 
 Inspect on EC2:
 
@@ -56,8 +58,9 @@ sudo python3 /usr/local/libexec/dataforge-monitor.py --test-notification
 The email is labeled PRUEBA CONTROLADA and does not imply a real failure.
 Unit tests exercise readiness outage/recovery, malformed/timeout responses,
 baseline/deduplication, running-to-failed transitions, grouped alerts, SNS
-failure/retry bookkeeping and private atomic state. Real outage detection and
-failed-pipeline email delivery still require separately labeled live evidence.
+failure/retry bookkeeping and private atomic state. Live tests used a deliberately
+stopped web container and a separate missing-file source. Their expected failures
+remain visible in history, labeled as controlled monitoring tests.
 
 Disable/rollback: `sudo systemctl disable --now dataforge-monitor.timer`.
 Restore any previous files from the installer's source backup and run
