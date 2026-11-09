@@ -44,6 +44,19 @@ docker build --label "org.opencontainers.image.revision=$revision" \
   --build-arg "VITE_APP_REVISION=$revision" \
   -f "$release/source/frontend/Dockerfile.aws" \
   -t "dataforge-web:$revision" "$release/source/frontend"
+# Inspect the built artifact before touching the currently running containers.
+built_metadata=$(docker run --rm --network none --entrypoint cat \
+  "dataforge-web:$revision" /usr/share/nginx/html/release.json)
+python3 -c '
+import json, sys
+expected, payload = sys.argv[1:]
+observed = json.loads(payload).get("revision")
+print(f"Built web revision: expected={expected} observed={observed}")
+if observed != expected:
+    raise SystemExit("Built web image contains a different revision; activation refused")
+' "$revision" "$built_metadata"
+docker run --rm --network none --entrypoint sh "dataforge-web:$revision" \
+  -c 'grep -R -F -q "$1" /usr/share/nginx/html/assets' sh "$revision"
 active=/opt/dataforge/compose.cicd.yml
 had_override=false
 if [[ -f $active ]]; then
@@ -99,8 +112,12 @@ import json
 import sys
 from pathlib import Path
 root = Path(sys.argv[1])
-assert json.loads((root / 'readiness.json').read_text())['status'] == 'ready'
-assert json.loads((root / 'live-release.json').read_text())['revision'] == sys.argv[2]
+status = json.loads((root / 'readiness.json').read_text()).get('status')
+observed = json.loads((root / 'live-release.json').read_text()).get('revision')
+expected = sys.argv[2]
+print(f'Live web revision: expected={expected} observed={observed}; readiness={status}')
+if status != 'ready' or observed != expected:
+    raise SystemExit('Live readiness/revision verification failed')
 PY
 for container in dataforge-api-1 dataforge-web-1; do
   test "$(docker inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$container")" = "$revision"
