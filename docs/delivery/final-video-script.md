@@ -7,17 +7,20 @@ integrantes deben aparecer mostrando una parte de la demostración.
 
 ## Estado previo y requisito pendiente
 
-La PR #53 está abierta. El commit de referencia a9278ea tiene el run de CI
-42669747089 en failure; el workflow revisado no despliega automáticamente.
-El anterior bloqueo de facturación fue mostrado por el operador y no se ha
-reportado resolución. Un push puede actualizar la rama/PR aunque falle CI.
-Fusionar a main es otra operación, sujeta a las reglas de la rama.
+La PR #53 está abierta. El bloqueo de GitHub fue resuelto: CI #35
+(run 42686987182) completó sus ocho jobs correctamente para el commit e819cba,
+incluido el DAG Airflow de punta a punta.
 
-No se puede grabar una demostración completa del requisito CI/CD con esos
-resultados. Faltan ejecutar pruebas y desplegar automáticamente un cambio real.
-Mostrar el fallo y explicarlo es honesto, pero no satisface el requisito obligatorio.
-No sustituirlo por un despliegue manual, pruebas locales aisladas o un badge verde
-de otro commit. Este guion no afirma que el bloqueo esté resuelto.
+Se agregó despliegue automático opcional de web/API, después del éxito de CI,
+mediante S3 y SSM. Su primera verificación en AWS está pendiente de configurar
+los secretos temporales y activar AWS_DEPLOY_ENABLED. Consultar
+[el procedimiento](../operations/automatic-app-deployment.md).
+
+Para grabar el requisito completo todavía debemos verificar un nuevo cambio real:
+push, pruebas y despliegue exitosos del mismo SHA, y resultado visible. El primer
+re-run sirve para comprobar la configuración, pero el video debe mostrar el
+disparo automático por un nuevo push. No sustituir el despliegue por pruebas
+locales, un badge de otro commit ni un comando manual.
 
 ## Preparación antes de grabar
 
@@ -200,15 +203,14 @@ Este bloque se graba cuando existan CI y CD funcionales.
 La rama feature se valida por el evento pull_request hacia main/develop; push
 directo a la feature por sí solo no coincide con el filtro push del workflow,
 pero la actualización de una PR abierta genera synchronize.
-La implementación actual no contiene la etapa CD.
+La etapa CD de web/API requiere AWS_DEPLOY_ENABLED=true y las credenciales temporales vigentes. Verificar su éxito real antes de narrar el resultado.
 
 Narración solo cuando se haya demostrado:
 «Este cambio disparó las pruebas. Tras su éxito, el flujo desplegó el mismo
 commit y verificamos el resultado en la aplicación.»
 
-Si el bloqueo sigue, mostrar el estado real y decir:
-«El código y la definición de CI están versionados, pero la ejecución alojada
-sigue bloqueada y aún no demostramos despliegue automático.» Eso documenta una
+Si el despliegue sigue pendiente, mostrar el estado real y decir:
+«Las pruebas alojadas pasaron, pero aún no demostramos despliegue automático.» Eso documenta una
 limitación y no cumple el criterio obligatorio. No existe una redacción que
 convierta un intento fallido en una demostración exitosa.
 
@@ -278,3 +280,4 @@ no afirmar entrega por el solo hecho de haber iniciado systemctl.
 - Entrega indicada por el profesor: un único correo a jurest82@eafit.edu.co,
   con copia a todos los integrantes, enlace YouTube y PDF, a más tardar
   el 9 de noviembre a las 17:00 de Colombia. Este documento no envía ese correo.
+

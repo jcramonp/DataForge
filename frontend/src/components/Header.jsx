@@ -13,11 +13,14 @@ const TAB_TITLES = {
   copilot: 'LLM Configuration Copilot',
 };
 
+const RELEASE_REVISION = import.meta.env.VITE_APP_REVISION || '';
+
 export default function Header({ activeTab, onRefresh, activeSource, setActiveSource, sources = [], connected }) {
   return (
     <header className="top-header">
       <div className="header-left">
         <h1 className="page-title">{TAB_TITLES[activeTab] || 'DataForge'}</h1>
+        {RELEASE_REVISION && <small title={`Application commit ${RELEASE_REVISION}`}>Build {RELEASE_REVISION.slice(0, 7)}</small>}
       </div>
 
       <div className="header-right">
@@ -59,3 +62,4 @@ export default function Header({ activeTab, onRefresh, activeSource, setActiveSo
     </header>
   );
 }
+

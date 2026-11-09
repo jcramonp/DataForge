@@ -9,12 +9,15 @@ on:
     branches: [develop, main]
   workflow_dispatch:
 
+env:
+  DATAFORGE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
 permissions:
   contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   lint:
@@ -22,11 +25,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
       - run: pip install ruff==0.8.6
       - run: ruff check --output-format=github .
+      - name: Validate deployment shell syntax
+        run: bash -n scripts/aws/deploy_app.sh
 
   unit-tests:
     name: Unit & regression tests (Python ${{ matrix.python-version }})
@@ -37,6 +45,9 @@ jobs:
         python-version: ["3.11", "3.13"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
@@ -71,6 +82,9 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -108,6 +122,9 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -122,6 +139,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
       - name: Validate docker-compose.yml
         run: |
           cp .env.example .env
@@ -158,6 +178,9 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
       - name: Start MinIO
         run: |
           docker run -d --name minio --user 0:0 -p 19000:9000 \
@@ -193,3 +216,44 @@ jobs:
           if [ "${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped') }}" = "true" ]; then
             exit 1
           fi
+
+  deploy-academy:
+    name: Deploy web and API (Academy)
+    needs: [ci-status]
+    if: >-
+      vars.AWS_DEPLOY_ENABLED == 'true' &&
+      github.repository == 'jcramonp/DataForge' &&
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.head_ref == 'feat/aws-academy-deployment') ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    concurrency:
+      group: dataforge-academy-deploy
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DATAFORGE_REVISION }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate temporary Academy credentials
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY" && test -n "$AWS_SESSION_TOKEN"
+          test "$(aws sts get-caller-identity --query Account --output text)" = 919774751018
+      - name: Publish tested source, deploy through SSM and verify live revision
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_DEFAULT_REGION: us-east-1
+        run: python scripts/aws/dispatch_deploy.py
+
