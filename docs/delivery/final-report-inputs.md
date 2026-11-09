@@ -18,9 +18,11 @@ supervisor, client interviews, adoption, economic savings or business KPIs.
 
 ## Learning confirmed by the team
 
-Before this project, the team had not worked with Apache Airflow, MinIO, Groq,
-Amazon Bedrock or an AWS architecture of this breadth. The learning methods or
-individual contribution details have not been confirmed and must not be invented.
+The team confirmed prior unfamiliarity with Apache Airflow, MinIO and Groq.
+They learned through documentation, AI assistance and video tutorials.
+For AWS, the team specifically highlighted RDS, SSM and alerts as the relevant
+new learning. Do not describe all AWS services as new to the team.
+Individual contribution details and specific tutorial titles remain unconfirmed.
 
 Distinguish outcomes:
 
@@ -55,6 +57,12 @@ If a weighted matrix is used, label weights/scores as team engineering judgments
 not measurements or historical records. Do not imply all alternatives were built.
 
 ## Current delivery limitations
+
+The complete retrospective design comparison, proposed weighted matrix,
+sensitivity analysis and the template's required six-factor table are in
+[design-alternatives.md](design-alternatives.md). Weights/scores are explicit
+engineering judgments prepared with AI assistance for team review, not
+historically agreed or experimentally measured values.
 
 The operator has received no response to the GitHub billing-lock support request.
 Do not mark hosted CI restored. The reviewed workflow validates code, services and

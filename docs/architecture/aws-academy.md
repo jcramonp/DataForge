@@ -42,8 +42,12 @@ Bedrock invocation was denied to the tested role. Groq is external to AWS.
 Operations: three CloudWatch infrastructure alarms (EC2 status, EC2 CPU and
 RDS free storage) publish state changes to a dedicated SNS topic with a
 confirmed email subscription. A labeled state-injection test verified email
-delivery and automatic recovery from real metrics. Application readiness and
-pipeline-alert delivery still require their own monitoring evidence.
+delivery and automatic recovery from real metrics. A systemd timer on the EC2 host now monitors application readiness and persisted
+run history. A controlled web interruption/recovery produced four confirmed
+emails; a deliberately failed missing-file run produced a matching pipeline
+alert. See docs/evidence/aws-application-monitor-verification.md. The monitor
+shares the application host, and manually accelerated checks do not establish
+a periodic detection SLA.
 
 Terraform provisions VPC/subnets/routes/security groups, EC2, RDS, S3 public
 access blocks, CloudWatch alarms and SNS. An ownership-checked CLI helper
