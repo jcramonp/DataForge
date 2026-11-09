@@ -40,8 +40,8 @@ Private backups were produced and downloaded to the operator's Windows PC:
   `1fab8d5764d38245da2b3c985e0f4f3aef8b1e19b0ce7e0a1c683381e0945abd`.
 
 No archive or password is versioned. Dump readability, encryption round-trip
-and download integrity were tested; restoration into isolated databases has
-not been tested. These sequential DB/object snapshots do not establish a global
+and download integrity were tested. Restoration into isolated databases also
+passed; see the results below. These sequential DB/object snapshots do not establish a global
 transactionally consistent snapshot under concurrent writes. Private plaintext
 staging remains under root-controlled EC2 directories pending cleanup; neither
 the plaintext staging nor the passphrase should be shared.
@@ -49,4 +49,26 @@ the plaintext staging nor the passphrase should be shared.
 EC2-to-SNS delivery was independently verified using a labeled controlled test.
 SNS returned MessageId `c4f2bf55-dee8-5f33-8884-dc3e096c75ac`, and the operator's
 email screenshot showed the matching test subject/body. This establishes role
-permission and delivery, not yet the periodic monitor's installation/detection.
+permission and delivery. Subsequent periodic-monitor verification is linked below.
+
+## Isolated database restoration — passed
+
+The operator executed scripts/aws/check_restore.sh against the saved dumps.
+Both SHA-256 checks passed; pg_isready reported accepting connections.
+pg_restore completed with --exit-on-error in a temporary networkless PostgreSQL
+16 container, separate from the running databases. Reported counts:
+
+| Restored database | Table/count |
+|---|---|
+| DataForge RDS dump | contracts 2; orchestrations 3; assets 12 |
+| Airflow dump | dag_runs 3; task_instances 30 |
+
+The script ended with RESTORE_CHECK_PASSED. These are the earlier backup's
+counts, not the later live environment containing monitor-test runs #4/#5.
+No production database was replaced. This validates actual restoration of both
+database dumps, not a full fresh AWS rebuild or S3 object restoration exercise.
+The backup predates monitor installation; reinstall the versioned monitor
+separately when recovering that snapshot.
+
+Periodic monitor installation, outage/recovery detection and email delivery
+were subsequently verified. See aws-application-monitor-verification.md.

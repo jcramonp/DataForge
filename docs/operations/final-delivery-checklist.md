@@ -36,33 +36,41 @@ the configured Groq key and a fresh, uniquely named additions-only proposal.
 Do not re-register the snapshot into the verified live environment merely to
 collect evidence: it may reactivate a revision or affect active configuration.
 
+## Operational closure evidence
+
+- Readiness: HTTP 200, configuration, PostgreSQL schema 0008, storage and
+  shipped example contracts valid. Readiness does not invoke Groq or prove
+  scheduler health.
+- Reboot recovery: six permanent containers returned; Gold/history persisted;
+  orchestration #3 succeeded after reboot in 19.91 seconds.
+- Availability monitor: timer installed, controlled web interruption detected,
+  four outage/recovery emails confirmed.
+- Pipeline monitor: deliberately missing-file test runs #4/#5 failed as expected;
+  supplied email identifies #5. Business runs #1–#3 remain successful.
+- Private infrastructure and encrypted runtime/data backups downloaded and
+  hash-verified. Actual isolated restoration of RDS/Airflow dumps passed.
+  See docs/evidence/aws-recovery-backup-verification.md.
+- Cost inventory and hypothetical base/10×/100× ingestion/consumption scenarios
+  recorded in docs/operations/aws-costs.md; calculator scripts/ops/cost-model.mjs.
+  The unused t2.large was stopped; its retained disk remains billable.
+
 ## Remaining closure checks
 
-1. Confirm `/api/ready` on the deployed API. It checks configuration, PostgreSQL
-   and migrations, storage and shipped example contracts. It does not invoke
-   Groq or check Airflow scheduler health. Infrastructure alarm health is also
-   separate from application readiness.
-2. Resolve GitHub account lock and rerun required validation. For commit
-   `cf7ad0e`, CI run `42577236523` still reports failure on all eight jobs
-   without steps/logs. This is consistent with the previously shown billing
-   lock; this API response does not expose a fresh billing annotation.
-   Never label the local checks or manual rollout as successful hosted CI/CD.
-3. Finish application/pipeline monitoring as required by the final rubric;
-   a successful CloudWatch/SNS infrastructure test does not prove those checks.
-4. Verify from-scratch deployment and recovery instructions. Preserve actual
-   Terraform state privately and back up required data; do not run a fresh
-   Terraform state against the already-provisioned environment. Current
-   reference deployments were repaired incrementally, not rebuilt empty.
-5. Check current Academy credit and record cost assumptions, then calculate
-   base/10x/100x ingress and consumption scenarios. Historical remaining credit
-   must not be treated as current.
-6. Complete the final report, architecture rationale, cost sensitivity and
-   timed demo using the professor's actual rubric/template.
-7. Review and merge PR #53 only after the agreed validation is available.
-   Review issue #28 (deployment), #29 (multi-source evidence) and #32 (CI/ops)
-   against their acceptance criteria before closing them.
+1. Resolve GitHub account billing lock and rerun hosted validation. Earlier run
+   42577236523 for cf7ad0e failed all eight jobs before steps/logs. No CI pass
+   or resolved lock is claimed. Local validation and manual SSM deployment do
+   not establish automatic CI/CD.
+2. Verify deployment into a fresh environment. The reference environment was
+   repaired incrementally. Preserve Terraform state privately; do not run a
+   fresh state against existing infrastructure. Database restore is now proven,
+   but empty-environment AWS reconstruction and S3 recovery remain untested.
+3. Complete the final report and timed demonstration against the actual rubric.
+   Include architecture rationale, measured results, cost assumptions and the
+   outstanding CI/automatic deployment limitations.
+4. Review/merge PR #53 after agreed validation. Check acceptance criteria for
+   #28, #29 and #32 before closing them.
 
-The deployed UI uses the SSM tunnel. Public access, if required for evaluation,
-needs a separately reviewed authenticated design; a public URL is not implied
-by the existing deployment. No new public exposure is required to use the
-current demonstration.
+Access remains through SSM. Public authenticated access requires separate
+implementation if the evaluation requires it. Do not present a public URL or
+100× processing capacity as delivered. Current Academy credit and live instance
+states must be checked again before additional work.
