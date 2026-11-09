@@ -50,7 +50,7 @@ export default function CopilotView() {
       {datasets.map(d => <option key={d.code} value={d.code}>{d.code}</option>)}
     </select></label>
     <label>Provider <select aria-label="Provider" value={mode} disabled={busy} onChange={e => {invalidate(); setMode(e.target.value);}}>
-      <option value="llm">Real LLM — Amazon Bedrock</option>
+      <option value="llm">Real LLM — configured server provider</option>
       <option value="deterministic">Deterministic fallback — no LLM</option>
     </select></label>
     <p>The active schema, existing rules and available profiling summary are included automatically.</p>
@@ -73,3 +73,4 @@ export default function CopilotView() {
     </section>}
   </div>;
 }
+

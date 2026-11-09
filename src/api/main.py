@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from src.copilot.service import (
-    SuggestRequest, ApproveRequest, ProviderUnavailable, ProposalRejected, propose, seal, unseal,
+    SuggestRequest, ApproveRequest, ProviderUnavailable, ProposalRejected, configured_provider_name, propose, seal, unseal,
 )
 from src.api.control_plane import contract_hash
 
@@ -1693,7 +1693,7 @@ def suggest_rules(payload: SuggestRequest):
             'proposal': proposal.model_dump(mode='json', by_alias=True),
             'contract': contract.model_dump(mode='json', by_alias=True),
             'token': seal(contract, base), 'mode': payload.mode,
-            'provider': 'bedrock' if payload.mode == 'llm' else 'deterministic',
+            'provider': configured_provider_name() if payload.mode == 'llm' else 'deterministic',
             'profile_id': profile.get('profile_id') if profile else None,
             'approval_required': True,
         }

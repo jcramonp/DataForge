@@ -77,6 +77,12 @@ services:
         condition: service_completed_successfully
   api:
     <<: *dataforge
+    env_file:
+      - path: .env.aws
+        format: raw
+      - path: .env.copilot
+        format: raw
+        required: false
     build: .
     image: dataforge-api:academy
     restart: unless-stopped
@@ -97,4 +103,5 @@ services:
 volumes:
   airflow_database:
   airflow_logs:
+
 

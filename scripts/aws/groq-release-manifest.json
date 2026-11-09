@@ -1,0 +1,37 @@
+{
+  "src/copilot/service.py": {
+    "new_hash": "f161ece58e63a8e69cd3586b4b7a30eaeb64cde5c9b60d51a4e684a2562de504",
+    "accepted_hashes": [
+      "f161ece58e63a8e69cd3586b4b7a30eaeb64cde5c9b60d51a4e684a2562de504",
+      "9cab0ec702cf920caddbabd64b75428ea22550b85c3b00c773cd2e4d3ea4e20b"
+    ]
+  },
+  "src/api/main.py": {
+    "new_hash": "2408980e21ecbf02b21f74aae75b0c796f07a62d570c57d57c99e06d65a99464",
+    "accepted_hashes": [
+      "2408980e21ecbf02b21f74aae75b0c796f07a62d570c57d57c99e06d65a99464",
+      "5274b172d58bfa3e358342059ae28fa904699e2be02c2ed0473498d14bde36f2"
+    ]
+  },
+  "frontend/src/views/CopilotView.jsx": {
+    "new_hash": "77052e2598d2225a0c89c2a5848e1569fd29b74fbbc809b2b0d5c3d5a9833ce3",
+    "accepted_hashes": [
+      "77052e2598d2225a0c89c2a5848e1569fd29b74fbbc809b2b0d5c3d5a9833ce3",
+      "ba698dc749ff822939f0ad3eac37e437f914dd2353066873c88b6a1a5079362f"
+    ]
+  },
+  "compose.aws.yml": {
+    "new_hash": "d0527d75552b350e617cb43ac9fae261a73cac266df7914b3cad4a92253ae941",
+    "accepted_hashes": [
+      "d0527d75552b350e617cb43ac9fae261a73cac266df7914b3cad4a92253ae941",
+      "c7c51aad7c261ba83e7932ba69a17a6cfb6b7ddbed05438141f40fdb22f4fb30",
+      "486123e1d7905f16d113d8500d1bbcc3bb1b664619bd7282d5e4c3d505df6a0f"
+    ]
+  },
+  "scripts/aws/configure_groq.py": {
+    "new_hash": "8e4f510795fed14286a819937b42a1fa1c146ebfc67a843327e34274e8762e79",
+    "accepted_hashes": [
+      "8e4f510795fed14286a819937b42a1fa1c146ebfc67a843327e34274e8762e79"
+    ]
+  }
+}
